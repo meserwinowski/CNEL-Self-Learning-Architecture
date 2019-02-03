@@ -1,0 +1,3 @@
+Anaconda
+
+python random_agent.py "SuperMarioWorld-Snes"
