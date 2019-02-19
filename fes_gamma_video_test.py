@@ -49,6 +49,8 @@ if __name__ == '__main__':
     output = file[:-4] + '.mp4'  # Video file extension
     images = []
     images_sal = []
+    images_bb = []
+    images_patch = []
     try:
         os.makedirs(dir_path)  # Create temporary image directory
     except OSError as e:
@@ -87,31 +89,44 @@ if __name__ == '__main__':
             # create gray scale version if required
             fg.convert(image_curr)
 
-        # %% Generate Gamma Kernel and Saliency Map
-            # Set Gamma Filter Orders and Shape parameters
-            k = np.array([1, 20, 1, 30, 1, 40], dtype=float)
-            mu = np.array([2, 2, 2, 2, 2, 2], dtype=float)
-            alpha = 5
-
             # Generate Gaussian Blur Prior - Time ~0.0020006
-            prior = fg.matlab_style_gauss2D((image_curr.img.shape[0],
-                                             image_curr.img.shape[1]),
+            prior = fg.matlab_style_gauss2D((image_curr.modified.shape[0],
+                                             image_curr.modified.shape[1]),
                                             sigma=300)
 
             # Generate Saliency Map with Gamma Filter
             start = time.time()
-            fg.FES_Gamma(image_curr, k, mu, alpha, prior)
+            fg.FES_Gamma(image_curr, image_curr.k, image_curr.mu,
+                         image_curr.alpha, prior)
             stop = time.time()
-            print("Salience Map Generation: ", stop - start, " seconds")
+#            print("Salience Map Generation: ", stop - start, " seconds")
 
             # Bound and Rank the most Salient Regions of Saliency Map
-            fg.salScan(image_curr)
+            fg.salScan(image_curr, rankCount=2)
+
+            # Draw bounding boxes on original images
+            fg.imagePatch(image_curr)
+            image_name = str(frame_count) + '_bb' + ext
+            cv2.imwrite(os.path.join(dir_path, image_name),
+                        cv2.cvtColor(image_curr.original, cv2.COLOR_RGB2BGR))
+            images_bb.append(image_name)
 
             # Use OpenCV to generate a png image of saliency map
             image_name = 'sal_' + str(frame_count) + ext
             cv2.imwrite(os.path.join(dir_path, image_name),
                         image_curr.salience_map * 255)
             images_sal.append(image_name)
+
+            # Create image patches
+            for i in range(2):
+                patch_name = 'patch_' + str(i) + '_' + str(frame_count) + ext
+                images_patch.append(patch_name)
+                patch_image = image_curr.original[image_curr.bb_coords[i][0]:
+                                                  image_curr.bb_coords[i][1],
+                                                  image_curr.bb_coords[i][2]:
+                                                  image_curr.bb_coords[i][3]]
+                cv2.imwrite(os.path.join(dir_path, patch_name),
+                            cv2.cvtColor(patch_image, cv2.COLOR_RGB2BGR))
 
         else:
             frame += 1
@@ -129,6 +144,7 @@ if __name__ == '__main__':
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     out = cv2.VideoWriter(output, fourcc, 20.0, (width, height))
 
+    # Delete saliency map images
     for image in images_sal:
         image_path = os.path.join(dir_path, image)  # Grab image path
         frame = cv2.imread(image_path)  # Grab image data from path
@@ -137,10 +153,29 @@ if __name__ == '__main__':
         if (cv2.waitKey(1) & 0xFF) == ord('q'):  # Hit 'q' to exit
             break
 
+    # Delete regular images
     for image in images:
+        image_path = os.path.join(dir_path, image)  # Grab image path
+#        frame = cv2.imread(image_path)  # Grab image data from path
+#        out.write(frame)  # Write out frame to video
+        os.remove(image_path)  # Delete png image
+        if (cv2.waitKey(1) & 0xFF) == ord('q'):  # Hit 'q' to exit
+            break
+
+    # Delete original images with bounding box
+    for image in images_bb:
         image_path = os.path.join(dir_path, image)  # Grab image path
         frame = cv2.imread(image_path)  # Grab image data from path
         out.write(frame)  # Write out frame to video
+        os.remove(image_path)  # Delete png image
+        if (cv2.waitKey(1) & 0xFF) == ord('q'):  # Hit 'q' to exit
+            break
+
+    # Delete image patches
+    for image in images_patch:
+        image_path = os.path.join(dir_path, image)  # Grab image path
+#        frame = cv2.imread(image_path)  # Grab image data from path
+#        out_patches.write(frame)  # Write out frame to video
         os.remove(image_path)  # Delete png image
         if (cv2.waitKey(1) & 0xFF) == ord('q'):  # Hit 'q' to exit
             break
@@ -155,50 +190,3 @@ if __name__ == '__main__':
     print("Number of Rendered Frames: ", frame_count)
 
     env.close()
-
-# %% Plot Results
-
-#    # Plot Saliency Map
-#    plt.figure()
-#    plt.imshow(testIMG.salience_map)
-#    plt.plot()
-#
-#    # Plot max intensity regions, and plot bounding box on original image
-##    fig, axes = plt.subplots(1, 5, sharey=True)
-#    bT = 1  # Bounding Box Thickness
-#    for i in range(len(testIMG.MIC)):
-#
-#        # Grab bounding coordinates
-#        a = testIMG.MIC[i][0]
-#        b = testIMG.MIC[i][1]
-#        c = testIMG.MIC[i][2]
-#        d = testIMG.MIC[i][3]
-#
-#        # Update original image
-#        if (testIMG.rgb):
-#            testIMG.original[a:b, c:c+bT] = [255, 150, 100]
-#            testIMG.original[a:b, d:d+bT] = [255, 150, 100]
-#            testIMG.original[a:a+bT, c:d+bT] = [255, 100, 100]
-#            testIMG.original[b:b+bT, c:d+bT] = [255, 100, 100]
-#        else:
-#            testIMG.img[a:b, c:c+bT] = [255]
-#            testIMG.img[a:b, d:d+bT] = [255]
-#            testIMG.img[a:a+bT, c:d+bT] = [255]
-#            testIMG.img[b:b+bT, c:d+bT] = [255]
-#
-#        # Generate intense region subplots
-##        axes[i].imshow(testIMG.salience_map[a:b, c:d])
-##        axes[i].set_title("X: {}, Y: {}".format(testIMG.MIC[i][1] - 25,
-##                                                testIMG.MIC[i][3] - 25))
-#    plt.show()
-#
-#    # Create a figure with 2 subplots
-#    fig, (ax1, ax2) = plt.subplots(1, 2, sharey=True)
-#    ax1.set_title('Original')
-#    ax2.set_title('Saliency Map')
-#    if (testIMG.rgb):
-#        ax1.imshow(testIMG.original)
-#    else:
-#        ax1.imshow(testIMG.img)
-#    ax2.imshow(testIMG.salience_map)
-#    plt.show()

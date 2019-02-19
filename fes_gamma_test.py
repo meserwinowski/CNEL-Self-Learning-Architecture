@@ -36,72 +36,44 @@ if __name__ == '__main__':
     # version if required
     fg.convert(testIMG)
 
-# %% Generate Gamma Kernel and Saliency Map
-
-    # Set Gamma Filter Orders and Shape parameters
-    k = np.array([1, 20, 1, 30, 1, 40], dtype=float)
-    mu = np.array([2, 2, 2, 2, 2, 2], dtype=float)
-    alpha = 5
+# %% Generate Saliency Map
 
     # Generate Gaussian Blur Prior - Time ~0.0020006
-    prior = fg.matlab_style_gauss2D((testIMG.img.shape[0],
-                                     testIMG.img.shape[1]), sigma=300) * 1
+    prior = fg.matlab_style_gauss2D((testIMG.modified.shape[0],
+                                     testIMG.modified.shape[1]), sigma=300) * 1
+
 #    mat = scipy.io.loadmat('./ICASSP Ryan/prior.mat')
 #    prior = mat['p1']
 
     # Generate Saliency Map with Gamma Filter
     start = time.time()
-    fg.FES_Gamma(testIMG, k, mu, alpha, prior)
+    fg.FES_Gamma(testIMG, testIMG.k, testIMG.mu, testIMG.alpha, prior)
     stop = time.time()
     print("Salience Map Generation: ", stop - start, " seconds")
 
     # Bound and Rank the most Salient Regions of Saliency Map
-    fg.salScan(testIMG)
+    fg.salScan(testIMG, rankCount=2)
 
 # %% Plot Results
 
-    # Plot Saliency Map
-    plt.figure()
-    plt.imshow(testIMG.salience_map)
-    plt.plot()
+#    # Plot Saliency Map
+#    plt.figure()
+#    plt.imshow(testIMG.original)
+#    plt.figure()
+#    plt.imshow(testIMG.salience_map)
+#    plt.plot()
 
-    # Plot max intensity regions, and plot bounding box on original image
-#    fig, axes = plt.subplots(1, 5, sharey=True)
-    bT = 1  # Bounding Box Thickness
-    for i in range(len(testIMG.MIC)):
-
-        # Grab bounding coordinates
-        a = testIMG.MIC[i][0]
-        b = testIMG.MIC[i][1]
-        c = testIMG.MIC[i][2]
-        d = testIMG.MIC[i][3]
-
-        # Update original image
-        if (testIMG.rgb):
-            testIMG.original[a:b, c:c+bT] = [255, 150, 100]
-            testIMG.original[a:b, d:d+bT] = [255, 150, 100]
-            testIMG.original[a:a+bT, c:d+bT] = [255, 100, 100]
-            testIMG.original[b:b+bT, c:d+bT] = [255, 100, 100]
-        else:
-            testIMG.img[a:b, c:c+bT] = [255]
-            testIMG.img[a:b, d:d+bT] = [255]
-            testIMG.img[a:a+bT, c:d+bT] = [255]
-            testIMG.img[b:b+bT, c:d+bT] = [255]
-
-        # Generate intense region subplots
-#        axes[i].imshow(testIMG.salience_map[a:b, c:d])
-#        axes[i].set_title("X: {}, Y: {}".format(testIMG.MIC[i][1] - 25,
-#                                                testIMG.MIC[i][3] - 25))
-    plt.show()
+    # Plot Bounding Box Patches
+    fg.imagePatch(testIMG, p=True)
 
     # Create a figure with 2 subplots
-    fig, (ax1, ax2) = plt.subplots(1, 2, sharey=True)
+    fig, (ax1, ax2) = plt.subplots(1, 2)
     ax1.set_title('Original')
     ax2.set_title('Saliency Map')
     if (testIMG.rgb):
         ax1.imshow(testIMG.original)
     else:
-        testIMG.img.astype(int)
-        ax1.imshow(testIMG.img)
+        testIMG.modified.astype(int)
+        ax1.imshow(testIMG.modified)
     ax2.imshow(testIMG.salience_map)
     plt.show()

@@ -13,7 +13,6 @@ implementation and results created by Ryan Burt.
 
 import cv2
 import math
-import time
 from skimage import io, color, transform
 import scipy.io
 import scipy.signal
@@ -26,20 +25,27 @@ plt.rcParams.update({'font.size': 22})
 class imageObject():
 
     ''' Image Object encapsulates the meta data related to each image
-    being processed by the front end system
-
-    TODO: Add bounding box meta data
-    TODO: Set up images to act in sequnce '''
+    being processed by the front end system '''
 
     path = './ICASSP Ryan/'  # Folder Path
     name = 'mario'  # Image Name
     ex = '.png'  # Image Extension
     rgb = True  # RGB Boolean
 
+    # Gamma Filter Order, Shape, and Exponentiation Parameters
+    k = np.array([1, 25, 1, 30, 1, 35], dtype=float)  # Orders
+    mu = np.array([2, 2, 2, 2, 2, 2], dtype=float)  # Shapes
+    alpha = 5  # Exponentiation
+
+    # Image Maps
     original = np.array([])  # Original Image
-    img = np.array([])  # Modified Image
+    modified = np.array([])  # Modified Image
+    ground_truth = np.array([])  # Ground Truth Map
     salience_map = np.array([])  # Saliency Map
-    MIC = []  # Maximally Intense Coordinates - Ranked by order in the list
+
+    # Bounding Box Metadata
+    bb_coords = []  # Bounding Box Coordinates - Ranked by order in the list
+    center_coord = []  # Approximate center pixel of objects
 
     def __init__(self, path=path, name=name, extension=ex, RGB=rgb):
         self.path = path
@@ -61,7 +67,7 @@ def convert(imgObj, gray=False):
                                     imgObj.ex)
 
         # Convert RGB to CIELAB
-        imgObj.img = color.rgb2lab(imgObj.original)
+        imgObj.modified = color.rgb2lab(imgObj.original)
 
 #        # Resize original image (May be unnecessary)
 #        imgObj.original = transform.resize(imgObj.original,
@@ -70,10 +76,10 @@ def convert(imgObj, gray=False):
 #                                           anti_aliasing=False)
 #
 #        # Resize converted image (May be unnecessary)
-#        imgObj.img = transform.resize(imgObj.img,
-#                                      np.array([128, 171]),
-#                                      mode='constant',
-#                                      anti_aliasing=False)
+#        imgObj.modified = transform.resize(imgObj.modified,
+#                                           np.array([128, 171]),
+#                                           mode='constant',
+#                                           anti_aliasing=False)
 
         # Attempt Gray Scale Conversion - Saves new gray scale image
         if (gray):
@@ -131,16 +137,14 @@ def matlab_style_gauss2D(shape=(3, 3), sigma=0.5):
     return h
 
 
-def salScan(image, rankCount=5, boundLength=10):
+def salScan(image, rankCount=5, boundLength=32):
 
     ''' Saliency Map Scan
     salmap - Generated Saliency Map
 
     Scan through the saliency map with a square region to find the
     most salient pieces of the image. Done by picking the maximally intense
-    picture and bounding the area around it
-
-    TODO: Done by summing the pixel intensity within the bounding box '''
+    picture and bounding the area around it '''
 
     # Copy salience map for processing
     smap = np.copy(image.salience_map)
@@ -149,31 +153,47 @@ def salScan(image, rankCount=5, boundLength=10):
     boxSize = {'Row': boundLength, 'Column': boundLength}
 
     # Pick out the top 'rankCount' maximally intense regions
+    image.bb_coords = []
+    total_old = 0
     for i in range(rankCount):
 
-        # Grab Maximally Intense Pixel Coordinates
+        # Grab Maximally Intense Pixel Coordinates (Object Center)
         indices = np.where(smap == smap.max())
-        modIndexR = indices[0][0]
-        modIndexC = indices[1][0]
+        R = indices[0][0]
+        C = indices[1][0]
 
-        # Derive upper left coordinate of bounding region
-        modIndexR1 = int(modIndexR - (boxSize['Row'] / 2))
-        modIndexC1 = int(modIndexC - (boxSize['Column'] / 2))
+        # Use defined gamma kernel orders to bound pixel distances
+        for gk in range(1, len(image.k), 2):
+            boundLength = image.k[gk]
+            boxSize = {'Row': boundLength, 'Column': boundLength}
 
-        # Derive lower right coordinate of bounding region
-        modIndexR2 = int(modIndexR + (boxSize['Row'] / 2))
-        modIndexC2 = int(modIndexC + (boxSize['Column'] / 2))
+            # Derive upper left coordinate of bounding region
+            R1 = int(R - (boxSize['Row'] / 2))
+            C1 = int(C - (boxSize['Column'] / 2))
 
-        # Append coordinates to image object's rank member
-        image.MIC.append([modIndexR1, modIndexR2, modIndexC1, modIndexC2])
+            # Derive lower right coordinate of bounding region
+            R2 = int(R + (boxSize['Row'] / 2))
+            C2 = int(C + (boxSize['Column'] / 2))
 
-        # "Zero out" the maximally intense region to avoid grabbing it again
-        for j in range(modIndexR1, modIndexR2):
-            for k in range(modIndexC1, modIndexC2):
-                try:
-                    smap[j][k] = 0
-                except IndexError:  # Handle image out of bounds indexing
-                    pass
+            # "Zero" the maximally intense region to avoid grabbing it again
+            # Sum up and find the average intensity of the region
+            total = 0
+            for j in range(R1, R2):
+                for k in range(C1, C2):
+                    if ((j < image.original.shape[0]) and
+                       (k < image.original.shape[1])):
+                        total += image.salience_map[j][k]
+                        smap[j][k] = 0
+
+            total /= (boundLength ** 2)
+            if (total >= total_old):
+                total_old = total
+                pass
+            else:
+                # Append coordinates to image object's bounding box member
+                image.bb_coords.append([R1, R2,  C1, C2])
+                image.center_coord.append([indices[0][0], indices[1][0]])
+                break
 
 
 def FES_Gamma(image, k, mu, alpha, prior, maskSize=50):
@@ -234,14 +254,15 @@ def FES_Gamma(image, k, mu, alpha, prior, maskSize=50):
         gk += g[i] * ((-1) ** i)
 
     # Compute Saliency over each scale and apply a Gaussian Blur
-    saliency = np.zeros(image.img.shape)
-    sal_map = np.zeros((image.img.shape[0], image.img.shape[1]))
+    saliency = np.zeros(image.modified.shape)
+    sal_map = np.zeros((image.modified.shape[0], image.modified.shape[1]))
 
     # Colored Images
     if (image.rgb):
         for i in range(3):
             # Convolution Time
-            saliency[:, :, i] = abs(cv2.filter2D(image.img[:, :, i], -1, gk))
+            saliency[:, :, i] = cv2.filter2D(image.modified[:, :, i], -1, gk)
+            saliency[:, :, i] = abs(saliency[:, :, i])
 
             # Gaussian Blur Time - ~0.002 seconds per iteration
             blur = matlab_style_gauss2D((26, 26), 0.2 * 26)
@@ -255,10 +276,10 @@ def FES_Gamma(image, k, mu, alpha, prior, maskSize=50):
     # Monochromatic Images
     else:
         # Convolution Time
-        saliency[:, :] = abs(cv2.filter2D(image.img[:, :], -1, gk))
+        saliency[:, :] = abs(cv2.filter2D(image.modified[:, :], -1, gk))
 
         # Gaussian Blur Time - ~0.002 seconds per iteration
-        saliency[:, :] = cv2.GaussianBlur(image.img[:, :],
+        saliency[:, :] = cv2.GaussianBlur(image.modified[:, :],
                                           (blurSize, blurSize), 10)
         sal_map = saliency
 
@@ -274,3 +295,41 @@ def FES_Gamma(image, k, mu, alpha, prior, maskSize=50):
 
     # Save saliency map to object passed in
     image.salience_map = sal_map
+
+
+def imagePatch(image, bbt=1, p=False):
+
+    if (p):  # If plot is True - Plot the image patches
+        fig, axes = plt.subplots(1, 5, sharey=True)
+
+    # Box max intensity regions, and place bounding box on original image
+    for i in range(len(image.bb_coords)):
+
+        # Grab bounding coordinates
+        a = image.bb_coords[i][0]
+        b = image.bb_coords[i][1]
+        c = image.bb_coords[i][2]
+        d = image.bb_coords[i][3]
+
+        # Generate intense region subplots
+        if (p):
+            try:
+                axes[i].imshow(image.original[a:b, c:d])
+                axes[i].set_title("X: {}, Y: {}".format(
+                        image.center_coord[i][0], image.center_coord[i][1]))
+            except IndexError:
+                pass
+
+        # Update original image
+        if (image.rgb):
+            image.original[a:b, c:c+bbt] = [255, 150, 100]
+            image.original[a:b, d:d+bbt] = [255, 150, 100]
+            image.original[a:a+bbt, c:d+bbt] = [255, 100, 100]
+            image.original[b:b+bbt, c:d+bbt] = [255, 100, 100]
+        else:
+            image.modified[a:b, c:c+bbt] = [255]
+            image.modified[a:b, d:d+bbt] = [255]
+            image.modified[a:a+bbt, c:d+bbt] = [255]
+            image.modified[b:b+bbt, c:d+bbt] = [255]
+
+    plt.show()
