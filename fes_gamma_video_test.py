@@ -3,28 +3,43 @@
 Created on Fri Oct  5 11:55:52 2018
 
 @author: meser
+
+fes_gamma_video_test.py - Test gamma kernel/front end system application
+on a bk2 video file. Script handles opening bk2 file, applying front end
+system, generating relevant images, and stitching images into a new mp4
+video.
+
 """
 
-import fes_gamma as fg
-import retro
-import os
-import errno
+# Standard Library Imports
 import sys
+import errno
+import os
+import time
+
+# 3P Imports
+import numpy as np
+import matplotlib.pyplot as plt
+import retro
 import cv2
 import scipy.io
 import scipy.signal
-import time
-import numpy as np
-import matplotlib.pyplot as plt
+
+# Local Imports
+import fes_gamma as fg
+
 plt.rcParams.update({'font.size': 22})
 
+# Parameters
+number_objects = 3
 
 # Main Routine
 if __name__ == '__main__':
     plt.close('all')
 
 #    file = sys.argv[1]
-    file = "SuperMarioWorld.bk2"
+#    file = "SuperMarioWorld.bk2"
+    file = "./Super Mario Gym/human/SuperMarioWorld-Snes/scenario/SuperMarioWorld-Snes-Start-0000.bk2"
 
     print("Render File: ", file)
 
@@ -40,7 +55,7 @@ if __name__ == '__main__':
     env.initial_state = movie.get_state()
     env.reset()
     frame = 0
-    framerate = 32
+    framerate = 2
     frame_count = 0
 
     # Working Directory + Name of bk2 file
@@ -102,14 +117,14 @@ if __name__ == '__main__':
 #            print("Salience Map Generation: ", stop - start, " seconds")
 
             # Bound and Rank the most Salient Regions of Saliency Map
-            fg.salScan(image_curr, rankCount=2)
+            fg.salScan(image_curr, rankCount=number_objects)
 
-            # Draw bounding boxes on original images
-            fg.imagePatch(image_curr)
-            image_name = str(frame_count) + '_bb' + ext
-            cv2.imwrite(os.path.join(dir_path, image_name),
-                        cv2.cvtColor(image_curr.original, cv2.COLOR_RGB2BGR))
-            images_bb.append(image_name)
+#            # Draw bounding boxes on original images
+#            fg.imagePatch(image_curr)
+#            image_name = str(frame_count) + '_bb' + ext
+#            cv2.imwrite(os.path.join(dir_path, image_name),
+#                        cv2.cvtColor(image_curr.original, cv2.COLOR_RGB2BGR))
+#            images_bb.append(image_name)
 
             # Use OpenCV to generate a png image of saliency map
             image_name = 'sal_' + str(frame_count) + ext
@@ -118,8 +133,8 @@ if __name__ == '__main__':
             images_sal.append(image_name)
 
             # Create image patches
-            for i in range(2):
-                patch_name = 'patch_' + str(i) + '_' + str(frame_count) + ext
+            for i in range(len(image_curr.bb_coords)):
+                patch_name = 'patch_' + str(frame_count) + '_' + str(i) + ext
                 images_patch.append(patch_name)
                 patch_image = image_curr.original[image_curr.bb_coords[i][0]:
                                                   image_curr.bb_coords[i][1],
@@ -172,13 +187,13 @@ if __name__ == '__main__':
             break
 
     # Delete image patches
-    for image in images_patch:
-        image_path = os.path.join(dir_path, image)  # Grab image path
-#        frame = cv2.imread(image_path)  # Grab image data from path
-#        out_patches.write(frame)  # Write out frame to video
-        os.remove(image_path)  # Delete png image
-        if (cv2.waitKey(1) & 0xFF) == ord('q'):  # Hit 'q' to exit
-            break
+#    for image in images_patch:
+#        image_path = os.path.join(dir_path, image)  # Grab image path
+##        frame = cv2.imread(image_path)  # Grab image data from path
+##        out_patches.write(frame)  # Write out frame to video
+#        os.remove(image_path)  # Delete png image
+#        if (cv2.waitKey(1) & 0xFF) == ord('q'):  # Hit 'q' to exit
+#            break
 
     # Release everything if job is finished
     out.release()

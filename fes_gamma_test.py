@@ -10,11 +10,17 @@ images.
 
 """
 
-import fes_gamma as fg
-import scipy.io
+# Standard Library Imports
 import time
+
+# 3P Imports
 import numpy as np
 import matplotlib.pyplot as plt
+import scipy.io
+
+# Local Imports
+import fes_gamma as fg
+
 plt.rcParams.update({'font.size': 22})
 
 
@@ -52,7 +58,7 @@ if __name__ == '__main__':
     print("Salience Map Generation: ", stop - start, " seconds")
 
     # Bound and Rank the most Salient Regions of Saliency Map
-    fg.salScan(testIMG, rankCount=2)
+    fg.salScan2(testIMG, rankCount=4)
 
 # %% Plot Results
 
@@ -64,7 +70,7 @@ if __name__ == '__main__':
 #    plt.plot()
 
     # Plot Bounding Box Patches
-    fg.imagePatch(testIMG, p=True)
+    fg.imagePatch2(testIMG, p=False)
 
     # Create a figure with 2 subplots
     fig, (ax1, ax2) = plt.subplots(1, 2)

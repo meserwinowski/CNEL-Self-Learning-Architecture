@@ -6,20 +6,78 @@ Created on Fri Oct  5 11:55:52 2018
 
 fes_gamma.py - Initial front end system gamma kernel implemenation in Python.
 Contains the current functional breakdown of the front end system (FES) gamma
-kernel. Current implementation is intended to mimic the initial MatLAB
+kernel. Current implementation is intended to mimic the initial MATLAB
 implementation and results created by Ryan Burt.
 
 """
 
-import cv2
+# Standard Library Imports
 import math
+
+# 3P Imports
+import numpy as np
+import matplotlib.pyplot as plt
+import cv2
 from skimage import io, color, transform
 import scipy.io
 import scipy.signal
 from PIL import Image
-import numpy as np
-import matplotlib.pyplot as plt
+
+# Local Imports
+
 plt.rcParams.update({'font.size': 22})
+
+
+class salObject():
+
+    ''' Specific object detected in an image. The object contains coordinates
+    to better track it in a pixel positional context. '''
+
+    center_coord = []
+    bb_coords = []
+
+    def __init__(self, center_coord=center_coord):
+        self.center_coord = [center_coord]
+        self.bb_coords = []
+
+    def center_check(self, new_center_coord):
+        # Check if center_coord list is empty
+        if not self.center_coord:
+            self.center_coord = [new_center_coord]
+
+        # Row Difference
+        Rd = new_center_coord[0] - self.center_coord[-1][0]
+
+        # Column Difference
+        Cd = new_center_coord[1] - self.center_coord[-1][1]
+
+        # 2D Eucledian Distance
+        distance = (np.sqrt(Rd ** 2 + Cd ** 2))
+
+        # If distance is within threshold...
+        if (distance < 16):
+            # Attach this coordinate to the object
+            self.center_coord.append(new_center_coord)
+            return True
+        return False
+
+    def build_bounding_box(self, boundLength=32):
+
+        R = self.center_coord[-1][0]
+        C = self.center_coord[-1][1]
+
+        # Dictionary for Clarity
+        boxSize = {'Row': boundLength, 'Column': boundLength}
+
+        # Derive upper left coordinate of bounding region
+        R1 = int(R - (boxSize['Row'] / 2))
+        C1 = int(C - (boxSize['Column'] / 2))
+
+        # Derive lower right coordinate of bounding region
+        R2 = int(R + (boxSize['Row'] / 2))
+        C2 = int(C + (boxSize['Column'] / 2))
+
+        self.bb_coords.append([R1, R2, C1, C2])
 
 
 class imageObject():
@@ -34,14 +92,17 @@ class imageObject():
 
     # Gamma Filter Order, Shape, and Exponentiation Parameters
     k = np.array([1, 25, 1, 30, 1, 35], dtype=float)  # Orders
-    mu = np.array([2, 2, 2, 2, 2, 2], dtype=float)  # Shapes
-    alpha = 5  # Exponentiation
+    mu = np.array([1, 2, 1, 2, 1, 2], dtype=float)  # Shapes
+    alpha = 4  # Exponentiation
 
     # Image Maps
     original = np.array([])  # Original Image
     modified = np.array([])  # Modified Image
     ground_truth = np.array([])  # Ground Truth Map
     salience_map = np.array([])  # Saliency Map
+
+    # Objects
+    objects = []  # List of objects in the frame
 
     # Bounding Box Metadata
     bb_coords = []  # Bounding Box Coordinates - Ranked by order in the list
@@ -137,6 +198,60 @@ def matlab_style_gauss2D(shape=(3, 3), sigma=0.5):
     return h
 
 
+def salScan2(image, rankCount=5, boundLength=32):
+    ''' Saliency Map Scan
+    salmap - Generated Saliency Map
+
+    Scan through the saliency map with a square region to find the
+    most salient pieces of the image. Done by picking the maximally intense
+    picture and bounding the area around it '''
+
+    # Copy salience map for processing
+    smap = np.copy(image.salience_map)
+
+    # Create a dictionary of the row and column distances from the center pixel
+    boxSize = {'Row': boundLength, 'Column': boundLength}
+
+    # Pick out the top 'rankCount' maximally intense regions
+    for i in range(rankCount):
+
+        # Grab Maximally Intense Pixel Coordinates (Object Center)
+        indices = np.where(smap == smap.max())
+        R = indices[0][0]
+        C = indices[1][0]
+
+        # If list of objects is empty, add a new object
+        flag = False
+        for o in image.objects:
+            # Check for an object with center coordinates near new coords
+            if o.center_check([R, C]):
+                # Get updated object
+                obj = o
+                flag = True
+                break
+        if not flag:
+            # Create a new object if returned false
+            image.objects.append(salObject([R, C]))
+            obj = image.objects[-1]
+
+        obj.build_bounding_box()
+        print("salScan2: ", obj)
+        print("salScan2: ", obj.center_coord)
+        # "Zero" the maximally intense region to avoid grabbing it again
+        # Sum up and find the average intensity of the region
+        total = 0
+        R1 = obj.bb_coords[-1][0]
+        R2 = obj.bb_coords[-1][1]
+        C1 = obj.bb_coords[-1][2]
+        C2 = obj.bb_coords[-1][3]
+        for j in range(R1, R2):
+            for k in range(C1, C2):
+                if ((j < image.original.shape[0]) and
+                   (k < image.original.shape[1])):
+                    total += image.salience_map[j][k]
+                    smap[j][k] = 0
+
+
 def salScan(image, rankCount=5, boundLength=32):
 
     ''' Saliency Map Scan
@@ -164,7 +279,7 @@ def salScan(image, rankCount=5, boundLength=32):
 
         # Use defined gamma kernel orders to bound pixel distances
         for gk in range(1, len(image.k), 2):
-            boundLength = image.k[gk]
+            boundLength = image.k[-1]
             boxSize = {'Row': boundLength, 'Column': boundLength}
 
             # Derive upper left coordinate of bounding region
@@ -185,15 +300,15 @@ def salScan(image, rankCount=5, boundLength=32):
                         total += image.salience_map[j][k]
                         smap[j][k] = 0
 
-            total /= (boundLength ** 2)
-            if (total >= total_old):
-                total_old = total
-                pass
-            else:
+#            total /= (boundLength ** 2)
+#            if (total >= total_old):
+#                total_old = total
+#                pass
+#            else:
                 # Append coordinates to image object's bounding box member
-                image.bb_coords.append([R1, R2,  C1, C2])
-                image.center_coord.append([indices[0][0], indices[1][0]])
-                break
+            image.bb_coords.append([R1, R2, C1, C2])
+            image.center_coord.append([indices[0][0], indices[1][0]])
+            break
 
 
 def FES_Gamma(image, k, mu, alpha, prior, maskSize=50):
@@ -297,6 +412,44 @@ def FES_Gamma(image, k, mu, alpha, prior, maskSize=50):
     image.salience_map = sal_map
 
 
+def imagePatch2(image, bbt=1, p=False):
+    if (p):  # If plot is True - Plot the image patches
+        fig, axes = plt.subplots(1, 5, sharey=True)
+
+    # Box max intensity regions, and place bounding box on original image
+    for o in image.objects:
+        print("imagePatch2: ", o)
+        print("salScan2: ", o.bb_coords)
+        # Grab bounding coordinates
+        a = o.bb_coords[-1][0]
+        b = o.bb_coords[-1][1]
+        c = o.bb_coords[-1][2]
+        d = o.bb_coords[-1][3]
+
+#        # Generate intense region subplots
+#        if (p):
+#            try:
+#                axes[i].imshow(image.original[a:b, c:d])
+#                axes[i].set_title("X: {}, Y: {}".format(
+#                        image.center_coord[i][0], image.center_coord[i][1]))
+#            except IndexError:
+#                pass
+
+        # Update original image
+        if (image.rgb):
+            image.original[a:b, c-bbt:c] = [255, 150, 100]
+            image.original[a:b, d:d+bbt] = [255, 150, 100]
+            image.original[a-bbt:a, c:d] = [255, 100, 100]
+            image.original[b:b+bbt, c:d] = [255, 100, 100]
+        else:
+            image.modified[a:b, c:c-bbt] = [255]
+            image.modified[a:b, d:d-bbt] = [255]
+            image.modified[a-bbt:a, c:d+bbt] = [255]
+            image.modified[b:b+bbt, c:d+bbt] = [255]
+
+    plt.show()
+
+
 def imagePatch(image, bbt=1, p=False):
 
     if (p):  # If plot is True - Plot the image patches
@@ -322,14 +475,14 @@ def imagePatch(image, bbt=1, p=False):
 
         # Update original image
         if (image.rgb):
-            image.original[a:b, c:c+bbt] = [255, 150, 100]
+            image.original[a:b, c-bbt:c] = [255, 150, 100]
             image.original[a:b, d:d+bbt] = [255, 150, 100]
-            image.original[a:a+bbt, c:d+bbt] = [255, 100, 100]
-            image.original[b:b+bbt, c:d+bbt] = [255, 100, 100]
+            image.original[a-bbt:a, c:d] = [255, 100, 100]
+            image.original[b:b+bbt, c:d] = [255, 100, 100]
         else:
-            image.modified[a:b, c:c+bbt] = [255]
-            image.modified[a:b, d:d+bbt] = [255]
-            image.modified[a:a+bbt, c:d+bbt] = [255]
+            image.modified[a:b, c:c-bbt] = [255]
+            image.modified[a:b, d:d-bbt] = [255]
+            image.modified[a-bbt:a, c:d+bbt] = [255]
             image.modified[b:b+bbt, c:d+bbt] = [255]
 
     plt.show()
