@@ -1,0 +1,4 @@
+Anaconda
+
+python random_agent.py SuperMarioWorld-Snes
+python keyboard_agent.py SuperMarioWorld-Snes Start
