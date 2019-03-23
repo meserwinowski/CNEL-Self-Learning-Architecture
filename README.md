@@ -1,3 +1,3 @@
-# Deep Predictive Coding Network (DPCN) - Front End System
+# Active Architecture for Self-Learning 
 
 Computational Neuro-Engineering Lab (CNEL) - University of Florida
