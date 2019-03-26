@@ -4,10 +4,10 @@ Created on Fri Oct  5 11:55:52 2018
 
 @author: meser
 
-fes_gamma_video_test.py - Test gamma kernel/front end system application
-on a bk2 video file. Script handles opening bk2 file, applying front end
-system, generating relevant images, and stitching images into a new mp4
-video.
+focus_of_attention_video_test.py - Test gamma kernel focus of attention
+application on a bk2 video file. Script handles opening bk2 file, applying
+front end system, generating relevant images, and stitching images into a new
+mp4 video.
 
 """
 
@@ -26,7 +26,7 @@ import scipy.io
 import scipy.signal
 
 # Local Imports
-import fes_gamma as fg
+import focus_of_attention as foa
 
 plt.rcParams.update({'font.size': 22})
 
@@ -95,32 +95,32 @@ if __name__ == '__main__':
             images.append(image_name)
 
             # Create an image object of the current frame for FESGK
-            image_curr = fg.imageObject(path=dir_path,
+            image_curr = foa.imageObject(path=dir_path,
                                         name=str(frame_count),
                                         extension='.png',
                                         RGB=True)
 
             # Convert image to CIELAB Color Space - Resize Image and
             # create gray scale version if required
-            fg.convert(image_curr)
+            foa.convert(image_curr)
 
             # Generate Gaussian Blur Prior - Time ~0.0020006
-            prior = fg.matlab_style_gauss2D((image_curr.modified.shape[0],
+            prior = foa.matlab_style_gauss2D((image_curr.modified.shape[0],
                                              image_curr.modified.shape[1]),
                                             sigma=300)
 
             # Generate Saliency Map with Gamma Filter
             start = time.time()
-            fg.FES_Gamma(image_curr, image_curr.k, image_curr.mu,
+            foa.FES_Gamma(image_curr, image_curr.k, image_curr.mu,
                          image_curr.alpha, prior)
             stop = time.time()
 #            print("Salience Map Generation: ", stop - start, " seconds")
 
             # Bound and Rank the most Salient Regions of Saliency Map
-            fg.salScan(image_curr, rankCount=number_objects)
+            foa.salScan(image_curr, rankCount=number_objects)
 
 #            # Draw bounding boxes on original images
-#            fg.imagePatch(image_curr)
+#            foa.imagePatch(image_curr)
 #            image_name = str(frame_count) + '_bb' + ext
 #            cv2.imwrite(os.path.join(dir_path, image_name),
 #                        cv2.cvtColor(image_curr.original, cv2.COLOR_RGB2BGR))

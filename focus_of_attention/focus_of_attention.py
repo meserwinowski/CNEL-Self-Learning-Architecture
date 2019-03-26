@@ -4,9 +4,9 @@ Created on Fri Oct  5 11:55:52 2018
 
 @author: meser
 
-fes_gamma.py - Initial front end system gamma kernel implemenation in Python.
-Contains the current functional breakdown of the front end system (FES) gamma
-kernel. Current implementation is intended to mimic the initial MATLAB
+focus_of_attention.py - Initial front end system gamma kernel implemenation in
+Python. Contains the current functional breakdown of the front end system (FES)
+gamma kernel. Current implementation is intended to mimic the initial MATLAB
 implementation and results created by Ryan Burt.
 
 """
@@ -112,7 +112,7 @@ class imageObject():
     bb_coords = []  # Bounding Box Coordinates - Ranked by order in the list
     center_coord = []  # Approximate center pixel of objects
 
-    def __init__(self, path=path, name=name, extension=ext, rgb=rgb, fc=fc):
+    def __init__(self, path=path, name=name, extension=ext, rgb=rgb, fc=0):
         self.path = path
         self.name = name
         self.ext = extension
@@ -191,17 +191,17 @@ class imageObject():
             d = o.bb_coords[-1][3]
 
             # Draw bounding boxes on patched map
-            if (self.rgb):
-                lc = [255, 150, 100]  # Line Color (RGB)
-                self.patched[a:b, c-bbt:c] = lc
-                self.patched[a:b, d:d+bbt] = lc
-                self.patched[a-bbt:a, c:d] = lc
-                self.patched[b:b+bbt, c:d] = lc
-            else:
-                self.patched[a:b, c:c-bbt] = [255]
-                self.patched[a:b, d:d-bbt] = [255]
-                self.patched[a-bbt:a, c:d+bbt] = [255]
-                self.patched[b:b+bbt, c:d+bbt] = [255]
+            if (self.rgb):  # RGB
+                lc = [255, 150, 100]  # Line Color
+                self.patched[a:b, c-bbt:c] = lc  # Left
+                self.patched[a:b, d:d+bbt] = lc  # Right
+                self.patched[a-bbt:a, c:d] = lc  # Top
+                self.patched[b:b+bbt, c:d] = lc  # Bottom
+            else:  # Gray
+                self.patched[a:b, c-bbt:c] = [255]  # Left
+                self.patched[a:b, d:d+bbt] = [255]  # Right
+                self.patched[a-bbt:a, c:d] = [255]  # Top
+                self.patched[b:b+bbt, c:d] = [255]  # Bottom
 
     def save_image_patches(self, dir_path: str):
 
