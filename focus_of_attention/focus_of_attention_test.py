@@ -27,43 +27,38 @@ if __name__ == '__main__':
     plt.close('all')
 
     # Open test images as 8-bit RGB values - Time ~0.0778813
-    mario = foa.imageObject('./',               # Path
-                            'SMW_Test_Image',   # Name
-                            '.png',             # Extension
-                            rgb=True)           # RGB Boolean
-    banana = foa.imageObject('./AIM/eyetrackingdata/original_images/',
-                             '22',
-                             '.jpg',
-                             rgb=True)
-    corner = foa.imageObject('./AIM/eyetrackingdata/original_images/',
-                             '120',
-                             '.jpg',
-                             rgb=True)
+    file = "./SMW_Test_Image.png"
+    mario = foa.imageObject(file)
+    file = "./AIM/eyetrackingdata/original_images/22.jpg"
+    banana = foa.imageObject(file)
+    file = "./AIM/eyetrackingdata/original_images/120.jpg"
+    corner = foa.imageObject(file)
 
     # Test Image
     testIMG = mario
-
-    # Convert image to CIELAB Color Space
-    testIMG.image_convert()
 
 # %% Generate Saliency Map
 
     # Generate Gaussian Blur Prior - Time ~0.0020006
     foveation_prior = foa.matlab_style_gauss2D(testIMG.modified.shape, 300)
 
-    # Generate Saliency Map with Gamma Filter
+    # Generate Gamma Kernel
+    kernel = foa.gamma_kernel(testIMG)
+
+    # Generate Saliency Map
     start = time.time()
-    foa.front_end_convolution(testIMG, foveation_prior)
+    foa.foa_convolution(testIMG, kernel, foveation_prior)
     stop = time.time()
     print("Salience Map Generation: ", stop - start, " seconds")
 
     # Bound and Rank the most Salient Regions of Saliency Map
-    foa.salScan2(testIMG, rankCount=4)
+    foa.salience_scan(testIMG, rankCount=5)
 
 # %% Plot Results
 
     # Plot Bounding Box Patches
     testIMG.draw_image_patches()
+    testIMG.save_image_patches()
 
     # Create a figure with 2 subplots
     fig, (ax1, ax2) = plt.subplots(1, 2)

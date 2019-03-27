@@ -24,6 +24,8 @@ import retro
 import cv2
 import scipy.io
 import scipy.signal
+import re
+from PIL import Image
 
 # Local Imports
 import focus_of_attention as foa
@@ -32,14 +34,56 @@ plt.rcParams.update({'font.size': 22})
 
 # Parameters
 number_objects = 3
+numbers = re.compile(r'(\d+)')
+
+
+def numericalSort(x):
+    parts = numbers.split(x)
+    parts[1::2] = map(int, parts[1::2])
+    return parts
+
+
+def output_video(output, path):
+    for image in sorted(os.listdir(path), key=numericalSort):
+        image_path = os.path.join(path, image)  # Grab image path
+        frame = cv2.imread(image_path)  # Grab image data from path
+        output.write(frame)  # Write out frame to video
+        if (cv2.waitKey(1) & 0xFF) == ord('q'):  # Hit 'q' to exit
+            break
+
+
+def save_image(img, path, name):
+    if (len(img.shape) != 2):
+        img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+    if (os.path.isdir(path)):
+        cv2.imwrite(os.path.join(path, name), img)
+    else:
+        os.makedirs(path)
+        cv2.imwrite(os.path.join(path, name), img)
+
+
+def delete_images(path):
+    for image in os.listdir(path):
+        os.remove(os.path.join(path, image))
+
+
+def delete_directory(path):
+    for image in os.listdir(path):
+        os.rmdir(os.path.join(path, image))
+    try:
+        os.rmdir(dir_path)  # Remove temporary image directory
+    except OSError as e:
+        print("Directory specified for removal probably not empty")
+        print(e)
+
 
 # Main Routine
 if __name__ == '__main__':
     plt.close('all')
 
 #    file = sys.argv[1]
-    file = "./Super Mario Gym/human/SuperMarioWorld-Snes/scenario/SuperMarioWorld.bk2"
-#    file = "./Super Mario Gym/human/SuperMarioWorld-Snes/scenario/SuperMarioWorld-Snes-Start-0000.bk2"
+    file = "./Super Mario Gym/Bink Video/SuperMarioWorld.bk2"
+#    file = "./Super Mario Gym/Bink Video/SuperMarioWorld-Snes-Start-0000.bk2"
 
     print("Render File: ", file)
 
@@ -48,10 +92,17 @@ if __name__ == '__main__':
     print("movie.players: ", movie.players)
 
     # Generate retro emulation
-    env = retro.make(game=movie.get_game(),
-                     state=retro.State.DEFAULT,
-                     use_restricted_actions=retro.Actions.ALL,
-                     players=movie.players)
+    try:
+        env = retro.make(game=movie.get_game(),
+                         state=retro.State.DEFAULT,
+                         use_restricted_actions=retro.Actions.ALL,
+                         players=movie.players)
+    except RuntimeError:
+        env.close()
+        env = retro.make(game=movie.get_game(),
+                         state=retro.State.DEFAULT,
+                         use_restricted_actions=retro.Actions.ALL,
+                         players=movie.players)
     env.initial_state = movie.get_state()
     env.reset()
     frame = 0
@@ -59,9 +110,11 @@ if __name__ == '__main__':
     frame_count = 0
 
     # Working Directory + Name of bk2 file
-    dir_path = os.getcwd() + '/' + file[:-4] + '/'
+    file = file[:-4].split('/')[-1]
+    dir_path = os.getcwd() + '/Super Mario Gym/' + file + '/'
     ext = '.png'  # Image extension
-    output = file[:-4] + '.mp4'  # Video file extension
+    output = file + '.mp4'  # Video file extension
+    output_patch = file + '_patch_' + '.mp4'
     images = []
     images_sal = []
     images_bb = []
@@ -71,6 +124,8 @@ if __name__ == '__main__':
     except OSError as e:
         if e.errno != errno.EEXIST:  # Handle directory already existing
             raise
+
+    first = True
 
     # Step through rendered environment
     while movie.step():
@@ -90,118 +145,81 @@ if __name__ == '__main__':
 
             # Use OpenCV to generate a png image of the current frame
             image_name = str(frame_count) + ext
-            cv2.imwrite(os.path.join(dir_path, image_name),
-                        cv2.cvtColor(obs, cv2.COLOR_RGB2BGR))
-            images.append(image_name)
+            save_image(obs, dir_path + "original/", image_name)
 
-            # Create an image object of the current frame for FESGK
-            image_curr = foa.imageObject(path=dir_path,
-                                        name=str(frame_count),
-                                        extension='.png',
-                                        RGB=True)
+            # Create an image object of the current frame to be processed
+            f = dir_path + "original/" + image_name
+            image_curr = foa.imageObject(f, fc=frame_count)
 
-            # Convert image to CIELAB Color Space - Resize Image and
-            # create gray scale version if required
-            foa.convert(image_curr)
+            if (first):
+                first = False
+                # Get image dimensions: Mario - 224x256x3
+                height, width, channels = obs.shape
+                print("H: ", height, "W: ", width, "C: ", channels)
 
-            # Generate Gaussian Blur Prior - Time ~0.0020006
-            prior = foa.matlab_style_gauss2D((image_curr.modified.shape[0],
-                                             image_curr.modified.shape[1]),
-                                            sigma=300)
+                # Generate Gaussian Blur Prior - Time ~0.0020006
+                prior = foa.matlab_style_gauss2D(image_curr.modified.shape,
+                                                 300)
+
+                # Generate Gamma Kernel
+                kernel = foa.gamma_kernel(image_curr)
 
             # Generate Saliency Map with Gamma Filter
             start = time.time()
-            foa.FES_Gamma(image_curr, image_curr.k, image_curr.mu,
-                         image_curr.alpha, prior)
+            foa.foa_convolution(image_curr, kernel, prior)
             stop = time.time()
-#            print("Salience Map Generation: ", stop - start, " seconds")
+            print("Salience Map Generation: ", stop - start, " seconds")
 
             # Bound and Rank the most Salient Regions of Saliency Map
-            foa.salScan(image_curr, rankCount=number_objects)
-
-#            # Draw bounding boxes on original images
-#            foa.imagePatch(image_curr)
-#            image_name = str(frame_count) + '_bb' + ext
-#            cv2.imwrite(os.path.join(dir_path, image_name),
-#                        cv2.cvtColor(image_curr.original, cv2.COLOR_RGB2BGR))
-#            images_bb.append(image_name)
+            foa.salience_scan(image_curr)
 
             # Use OpenCV to generate a png image of saliency map
-            image_name = 'sal_' + str(frame_count) + ext
-            cv2.imwrite(os.path.join(dir_path, image_name),
-                        image_curr.salience_map * 255)
-            images_sal.append(image_name)
+            image_name = str(frame_count) + ext
+            save_image(image_curr.salience_map * 255,
+                       dir_path + "salience/", image_name)
 
             # Create image patches
-            for i in range(len(image_curr.bb_coords)):
-                patch_name = 'patch_' + str(frame_count) + '_' + str(i) + ext
-                images_patch.append(patch_name)
-                patch_image = image_curr.original[image_curr.bb_coords[i][0]:
-                                                  image_curr.bb_coords[i][1],
-                                                  image_curr.bb_coords[i][2]:
-                                                  image_curr.bb_coords[i][3]]
-                cv2.imwrite(os.path.join(dir_path, patch_name),
-                            cv2.cvtColor(patch_image, cv2.COLOR_RGB2BGR))
+            image_curr.save_image_patches(dir_path)
+#            for i in range(len(image_curr.bb_coords)):
+#                patch_name = 'patch_' + str(frame_count) + '_' + str(i) + ext
+#                images_patch.append(patch_name)
+#                patch_image = image_curr.original[image_curr.bb_coords[i][0]:
+#                                                  image_curr.bb_coords[i][1],
+#                                                  image_curr.bb_coords[i][2]:
+#                                                  image_curr.bb_coords[i][3]]
+#                cv2.imwrite(os.path.join(dir_path, patch_name),
+#                            cv2.cvtColor(patch_image, cv2.COLOR_RGB2BGR))
 
         else:
             frame += 1
 
-    # Get image dimensions
-    image_path = os.path.join(dir_path, images_sal[0])
-    frame = cv2.imread(image_path)
-    height, width, channels = frame.shape
-    print("H: ", height, "W: ", width, "C: ", channels)
-    image_path = os.path.join(dir_path, images[0])
-    frame = cv2.imread(image_path)
-    height, width, channels = frame.shape
-
     # Convert generated images into an mp4
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(output, fourcc, 20.0, (width, height))
+    fourcc = cv2.VideoWriter_fourcc(*'MP4V')
+    out = cv2.VideoWriter(output, fourcc, 16.0, (width, height))
+    out_patch = cv2.VideoWriter(output_patch, fourcc, 16.0, (32, 32))
+
+    # Delete original images
+    output_video(out, dir_path + "original/")
+    delete_images(dir_path + "original/")
 
     # Delete saliency map images
-    for image in images_sal:
-        image_path = os.path.join(dir_path, image)  # Grab image path
-        frame = cv2.imread(image_path)  # Grab image data from path
-        out.write(frame)  # Write out frame to video
-        os.remove(image_path)  # Delete png image
-        if (cv2.waitKey(1) & 0xFF) == ord('q'):  # Hit 'q' to exit
-            break
-
-    # Delete regular images
-    for image in images:
-        image_path = os.path.join(dir_path, image)  # Grab image path
-#        frame = cv2.imread(image_path)  # Grab image data from path
-#        out.write(frame)  # Write out frame to video
-        os.remove(image_path)  # Delete png image
-        if (cv2.waitKey(1) & 0xFF) == ord('q'):  # Hit 'q' to exit
-            break
+    output_video(out, dir_path + "salience/")
+    delete_images(dir_path + "salience/")
 
     # Delete original images with bounding box
-    for image in images_bb:
-        image_path = os.path.join(dir_path, image)  # Grab image path
-        frame = cv2.imread(image_path)  # Grab image data from path
-        out.write(frame)  # Write out frame to video
-        os.remove(image_path)  # Delete png image
-        if (cv2.waitKey(1) & 0xFF) == ord('q'):  # Hit 'q' to exit
-            break
+#    output_video(out, dir_path, images_bb)
+#    delete_images(dir_path, images_bb)
 
     # Delete image patches
-#    for image in images_patch:
-#        image_path = os.path.join(dir_path, image)  # Grab image path
-##        frame = cv2.imread(image_path)  # Grab image data from path
-##        out_patches.write(frame)  # Write out frame to video
-#        os.remove(image_path)  # Delete png image
-#        if (cv2.waitKey(1) & 0xFF) == ord('q'):  # Hit 'q' to exit
-#            break
+    output_video(out_patch, dir_path + "patches/obj1/")
+#    delete_images(dir_path, images_patch)
 
     # Release everything if job is finished
     out.release()
+    out_patch.release()
     cv2.destroyAllWindows()  # Kills python process windows
-    os.rmdir(dir_path)  # Remove temporary image directory
+#    delete_directory(dir_path)
 
-    # 224x256x3
-    print("H: ", height, "W: ", width, "C: ", channels)
     print("Number of Rendered Frames: ", frame_count)
 
     env.close()

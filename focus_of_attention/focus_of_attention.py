@@ -14,6 +14,7 @@ implementation and results created by Ryan Burt.
 # Standard Library Imports
 import math
 import os
+import errno
 
 # 3P Imports
 import numpy as np
@@ -42,10 +43,17 @@ class salObject():
         self.center_coord = [center_coord]
         self.bb_coords = []
 
-    def center_check(self, new_center_coord):
+    def object_compare(self, new_coord, frame):
+        for o in frame.objects:
+            if new_coord == o.center_coord[-1]:
+                return False
+        return True
+
+    def center_check(self, new_center_coord, frame):
         # Check if center_coord list is empty
         if not self.center_coord:
             self.center_coord = [new_center_coord]
+            return False
 
         # Row Difference
         Rd = new_center_coord[0] - self.center_coord[-1][0]
@@ -57,7 +65,8 @@ class salObject():
         distance = (np.sqrt(Rd ** 2 + Cd ** 2))
 
         # If distance is within threshold...
-        if (distance < 16):
+        flag = self.object_compare(new_center_coord, frame)
+        if (distance > 2 and distance < 16 and flag):
             # Attach this coordinate to the object
             self.center_coord.append(new_center_coord)
             return True
@@ -73,11 +82,19 @@ class salObject():
 
         # Derive upper left coordinate of bounding region
         R1 = int(R - (boxSize['Row'] / 2))
+        if (R1 < 0):
+            R1 = 0
         C1 = int(C - (boxSize['Column'] / 2))
+        if (C1 < 0):
+            C1 = 0
 
         # Derive lower right coordinate of bounding region
         R2 = int(R + (boxSize['Row'] / 2))
+        if (R2 > 223):
+            R2 = 223
         C2 = int(C + (boxSize['Column'] / 2))
+        if (C2 > 255):
+            C2 = 255
 
         self.bb_coords.append([R1, R2, C1, C2])
 
@@ -87,11 +104,11 @@ class imageObject():
     ''' Image Object encapsulates the meta data related to each image
     being processed by the front end system '''
 
-    path = './ICASSP Ryan/'  # Folder Path
-    name = 'mario'  # Image Name
-    ext = '.png'  # Image Extension
-    rgb = True  # RGB Boolean
-    fc = 0  # Frame Count
+    path = ''   # Folder Path
+    name = ''     # Image Name
+    ext = '.'  # Image Extension
+    rgb = True    # RGB Boolean
+    fc = 0        # Frame Count
 
     # Gamma Filter Order, Shape, and Exponentiation Parameters
     k = np.array([1, 25, 1, 30, 1, 35], dtype=float)  # Orders
@@ -112,12 +129,34 @@ class imageObject():
     bb_coords = []  # Bounding Box Coordinates - Ranked by order in the list
     center_coord = []  # Approximate center pixel of objects
 
-    def __init__(self, path=path, name=name, extension=ext, rgb=rgb, fc=0):
-        self.path = path
-        self.name = name
-        self.ext = extension
+    def __init__(self, file, rgb=rgb, fc=0):
+        # Extract image name, path, and extension
+        self.file_parse(file)
+#        print("Path: ", self.path)
+#        print("Name: ", self.name)
+#        print("ext: ", self.ext)
+
+        # Convert image to CIELAB Color Space
+        self.image_convert()
+
         self.rgb = rgb
         self.fc = fc
+
+    def file_parse(self, file):
+
+        ''' Discretize file path, name, and extension '''
+
+        if (file[0] == '.'):
+            file = file[1:]
+        s1 = file.split('.')
+        self.ext += s1[-1]
+        s2 = s1[0].split('/')
+        self.name = s2[-1]
+        s2.remove(s2[-1])
+        for f in s2:
+            self.path += (f + '/')
+        if (self.path[0] == '/'):
+            self.path = '.' + self.path
 
     def image_convert(self):
 
@@ -125,9 +164,7 @@ class imageObject():
 
         if (self.rgb):  # If image is RGB...
             # Read original image into object
-            self.original = io.imread(self.path +
-                                      self.name +
-                                      self.ext)
+            self.original = io.imread(self.path + self.name + self.ext)
 
             # Convert RGB to CIELAB
             self.modified = color.rgb2lab(self.original)
@@ -137,9 +174,7 @@ class imageObject():
             self.name = self.name + '_gray'
 
             # Reopen image as gray scale
-            gim = Image.open(self.path +
-                             self.name +
-                             self.ext).convert('LA')
+            gim = Image.open(self.path + self.name + self.ext).convert('LA')
             self.img = np.array(gim)[:, :, 0]
 
     def gray_convert(self):
@@ -168,6 +203,9 @@ class imageObject():
         plt.imshow(img)
         plt.show()
 
+    def plot_original_map(self):
+        self.display_image(self.original, "Original Image")
+
     def plot_saliency_map(self):
         self.display_image(self.salience_map, "Saliency Map")
 
@@ -181,9 +219,6 @@ class imageObject():
 
         # Place a bounding box on max intensity regions
         for o in self.objects:
-            print("imagePatch2: ", o)
-            print("salScan2: ", o.bb_coords)
-
             # Grab bounding coordinates
             a = o.bb_coords[-1][0]
             b = o.bb_coords[-1][1]
@@ -203,21 +238,33 @@ class imageObject():
                 self.patched[a-bbt:a, c:d] = [255]  # Top
                 self.patched[b:b+bbt, c:d] = [255]  # Bottom
 
-    def save_image_patches(self, dir_path: str):
+    def save_image_patches(self, path=os.getcwd()):
 
-        ''' Save image patches from the current image to the specified
-        directory. '''
+        ''' Save image patches from the current image to
+        specified directories. '''
 
         # Create image patches
-        for i in range(len(self.bb_coords)):
-            patch_name = 'patch_' + self.fc + '_' + str(i) + self.ext
-            self.patch_name_list.append(patch_name)
-            patch_image = self.original[self.bb_coords[i][0]:
-                                        self.bb_coords[i][1],
-                                        self.bb_coords[i][2]:
-                                        self.bb_coords[i][3]]
-            cv2.imwrite(os.path.join(dir_path, patch_name),
+        save_path = path + 'patches/'
+        try:
+            os.makedirs(save_path)  # Create temporary image directory
+        except OSError as e:
+            pass
+        try:
+            for i in range(3):
+                subf = 'obj' + str(i) + '/'
+                os.makedirs(save_path + subf)
+        except OSError:
+            pass
+        i = 0
+        for o in self.objects:
+            patch_name = str(self.fc) + '_' + str(i) + self.ext
+            subf = 'obj' + str(i) + '/'
+            o.patch_name_list.append(patch_name)
+            patch_image = self.original[o.bb_coords[-1][0]:o.bb_coords[-1][1],
+                                        o.bb_coords[-1][2]:o.bb_coords[-1][3]]
+            cv2.imwrite(os.path.join(save_path + subf, patch_name),
                         cv2.cvtColor(patch_image, cv2.COLOR_RGB2BGR))
+            i += 1
 
 
 def matlab_style_gauss2D(shape=(3, 3), sigma=0.5):
@@ -226,6 +273,7 @@ def matlab_style_gauss2D(shape=(3, 3), sigma=0.5):
     fspecial('gaussian', [shape], [sigma])
         Machine Epsilon - Smallest discrete difference between numbers
     where they are numerically the same; determined by data type '''
+
     # Get 2D Gaussian Dimensional Lengths
     m, n = [(ss - 1) / 2 for ss in shape[:2]]
 
@@ -247,7 +295,8 @@ def matlab_style_gauss2D(shape=(3, 3), sigma=0.5):
     return h
 
 
-def salScan2(image, rankCount=5, boundLength=32):
+def salience_scan(image, rankCount=3, boundLength=32):
+
     ''' Saliency Map Scan
     salmap - Generated Saliency Map
 
@@ -266,14 +315,14 @@ def salScan2(image, rankCount=5, boundLength=32):
 
         # Grab Maximally Intense Pixel Coordinates (Object Center)
         indices = np.where(smap == smap.max())
-        R = indices[0][0]
-        C = indices[1][0]
+        R = indices[0][0]  # Row
+        C = indices[1][0]  # Column
 
         # If list of objects is empty, add a new object
         flag = False
         for o in image.objects:
             # Check for an object with center coordinates near new coords
-            if o.center_check([R, C]):
+            if o.center_check([R, C], image):
                 # Get updated object
                 obj = o
                 flag = True
@@ -284,8 +333,6 @@ def salScan2(image, rankCount=5, boundLength=32):
             obj = image.objects[-1]
 
         obj.build_bounding_box()
-        print("salScan2: ", obj)
-        print("salScan2: ", obj.center_coord)
 
         # "Zero" the maximally intense region to avoid grabbing it again
         # Sum up and find the average intensity of the region
@@ -361,22 +408,14 @@ def salScan(image, rankCount=5, boundLength=32):
             break
 
 
-def front_end_convolution(image, prior, maskSize=50):
+def gamma_kernel(image, maskSize=26):
 
-    ''' Front End System Gamma (FES_Gamma)
-    image - Input Image Object - Contains CIELAB Color Space Image
+    ''' Generate a 2D Gamma Kernel
     k - vector contained kernel orders
-    mu - vector containing shape parameters
-    alpha - exponent on the saliency
-    p1 - prior learned gaussian (data in prior.mat)
+    mu - vector containing shape parameters '''
 
-    Create a 2D gamma kernel and convolve it with the input image to generate
-    a saliency map '''
-
-    blurSize = 3  # Gaussian Blur - Odd Size Required
     k = image.k
     mu = image.mu
-    alpha = image.alpha
 
     # Create Kernels and Kernel Mask
     g = np.zeros((len(mu), 2 * maskSize + 1, 2 * maskSize + 1))
@@ -421,6 +460,24 @@ def front_end_convolution(image, prior, maskSize=50):
     for i in range(len(mu)):
         gk += g[i] * ((-1) ** i)
 
+    return gk
+
+
+def foa_convolution(image, kernel, prior):
+
+    ''' Focus of Attention Convolution
+    image - Input Image Object - Contains CIELAB Color Space Image
+    kernel - Matrix for filtering the image
+    alpha - exponent on the saliency
+    prior - foveation prior
+
+    Create a 2D gamma kernel and convolve it with the input image to generate
+    a saliency map '''
+
+    blurSize = 3  # Gaussian Blur - Odd Size Required
+    alpha = image.alpha
+    gk = kernel
+
     # Compute Saliency over each scale and apply a Gaussian Blur
     saliency = np.zeros(image.modified.shape)
     sal_map = np.zeros((image.modified.shape[0], image.modified.shape[1]))
@@ -463,79 +520,3 @@ def front_end_convolution(image, prior, maskSize=50):
 
     # Save saliency map to object passed in
     image.salience_map = sal_map
-
-
-def imagePatch2(image, bbt=1, p=False):
-    if (p):  # If plot is True - Plot the image patches
-        fig, axes = plt.subplots(1, 5, sharey=True)
-
-    # Box max intensity regions, and place bounding box on original image
-    for o in image.objects:
-        print("imagePatch2: ", o)
-        print("salScan2: ", o.bb_coords)
-        # Grab bounding coordinates
-        a = o.bb_coords[-1][0]
-        b = o.bb_coords[-1][1]
-        c = o.bb_coords[-1][2]
-        d = o.bb_coords[-1][3]
-
-#        # Generate intense region subplots
-#        if (p):
-#            try:
-#                axes[i].imshow(image.original[a:b, c:d])
-#                axes[i].set_title("X: {}, Y: {}".format(
-#                        image.center_coord[i][0], image.center_coord[i][1]))
-#            except IndexError:
-#                pass
-
-        # Update original image
-        if (image.rgb):
-            image.original[a:b, c-bbt:c] = [255, 150, 100]
-            image.original[a:b, d:d+bbt] = [255, 150, 100]
-            image.original[a-bbt:a, c:d] = [255, 100, 100]
-            image.original[b:b+bbt, c:d] = [255, 100, 100]
-        else:
-            image.modified[a:b, c:c-bbt] = [255]
-            image.modified[a:b, d:d-bbt] = [255]
-            image.modified[a-bbt:a, c:d+bbt] = [255]
-            image.modified[b:b+bbt, c:d+bbt] = [255]
-
-    plt.show()
-
-
-def imagePatch(image, bbt=1, p=False):
-
-    if (p):  # If plot is True - Plot the image patches
-        fig, axes = plt.subplots(1, 5, sharey=True)
-
-    # Box max intensity regions, and place bounding box on original image
-    for i in range(len(image.bb_coords)):
-
-        # Grab bounding coordinates
-        a = image.bb_coords[i][0]
-        b = image.bb_coords[i][1]
-        c = image.bb_coords[i][2]
-        d = image.bb_coords[i][3]
-
-        # Generate intense region subplots
-        if (p):
-            try:
-                axes[i].imshow(image.original[a:b, c:d])
-                axes[i].set_title("X: {}, Y: {}".format(
-                        image.center_coord[i][0], image.center_coord[i][1]))
-            except IndexError:
-                pass
-
-        # Update original image
-        if (image.rgb):
-            image.original[a:b, c-bbt:c] = [255, 150, 100]
-            image.original[a:b, d:d+bbt] = [255, 150, 100]
-            image.original[a-bbt:a, c:d] = [255, 100, 100]
-            image.original[b:b+bbt, c:d] = [255, 100, 100]
-        else:
-            image.modified[a:b, c:c-bbt] = [255]
-            image.modified[a:b, d:d-bbt] = [255]
-            image.modified[a-bbt:a, c:d+bbt] = [255]
-            image.modified[b:b+bbt, c:d+bbt] = [255]
-
-    plt.show()
