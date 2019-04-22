@@ -22,7 +22,6 @@ import matplotlib.pyplot as plt
 import cv2
 from skimage import io, color, transform
 import scipy.io
-import scipy.signal
 from PIL import Image
 
 # Local Imports
@@ -112,8 +111,8 @@ class imageObject():
 
     # Gamma Filter Order, Shape, and Exponentiation Parameters
     k = np.array([1, 25, 1, 30, 1, 35], dtype=float)  # Orders
-    mu = np.array([1, 2, 1, 2, 1, 2], dtype=float)  # Shapes
-    alpha = 4  # Exponentiation
+    mu = np.array([4, 4, 4, 4, 4, 4], dtype=float)  # Shapes
+    alpha = 3  # Exponentiation
 
     # Image Maps
     original = np.array([])  # Original Image
@@ -129,12 +128,13 @@ class imageObject():
     bb_coords = []  # Bounding Box Coordinates - Ranked by order in the list
     center_coord = []  # Approximate center pixel of objects
 
-    def __init__(self, file, rgb=rgb, fc=0):
+    def __init__(self, img, rgb=rgb, fc=0):
+        
+        ''' Initialization '''
+
         # Extract image name, path, and extension
-        self.file_parse(file)
-#        print("Path: ", self.path)
-#        print("Name: ", self.name)
-#        print("ext: ", self.ext)
+#        self.file_parse(img)
+        self.original = img
 
         # Convert image to CIELAB Color Space
         self.image_convert()
@@ -164,7 +164,7 @@ class imageObject():
 
         if (self.rgb):  # If image is RGB...
             # Read original image into object
-            self.original = io.imread(self.path + self.name + self.ext)
+#            self.original = io.imread(self.path + self.name + self.ext)
 
             # Convert RGB to CIELAB
             self.modified = color.rgb2lab(self.original)
@@ -174,7 +174,8 @@ class imageObject():
             self.name = self.name + '_gray'
 
             # Reopen image as gray scale
-            gim = Image.open(self.path + self.name + self.ext).convert('LA')
+#            gim = Image.open(self.path + self.name + self.ext).convert('LA')
+            gim = self.original.convert('LA')
             self.img = np.array(gim)[:, :, 0]
 
     def gray_convert(self):
@@ -209,7 +210,7 @@ class imageObject():
     def plot_saliency_map(self):
         self.display_image(self.salience_map, "Saliency Map")
 
-    def draw_image_patches(self, bbt=1, plot=False):
+    def draw_image_patches(self, bbt=1, salmap=True, plot=False):
 
         ''' Apply bounding boxes to original image in the patched map. Boolean
         value decides if the patches from the image will be saved. '''
@@ -218,20 +219,26 @@ class imageObject():
         self.patched = np.copy(self.original)
 
         # Place a bounding box on max intensity regions
-        for o in self.objects:
+        for o in self.bb_coords:
+
             # Grab bounding coordinates
-            a = o.bb_coords[-1][0]
-            b = o.bb_coords[-1][1]
-            c = o.bb_coords[-1][2]
-            d = o.bb_coords[-1][3]
+            a = o[0]
+            b = o[1]
+            c = o[2]
+            d = o[3]
 
             # Draw bounding boxes on patched map
             if (self.rgb):  # RGB
-                lc = [255, 150, 100]  # Line Color
+                lc = [100, 150, 255]  # Line Color
                 self.patched[a:b, c-bbt:c] = lc  # Left
                 self.patched[a:b, d:d+bbt] = lc  # Right
                 self.patched[a-bbt:a, c:d] = lc  # Top
                 self.patched[b:b+bbt, c:d] = lc  # Bottom
+                if (salmap):  # Salience Map
+                    self.salience_map[a:b, c-bbt:c] = 1.0  # Left
+                    self.salience_map[a:b, d:d+bbt] = 1.0  # Right
+                    self.salience_map[a-bbt:a, c:d] = 1.0  # Top
+                    self.salience_map[b:b+bbt, c:d] = 1.0  # Bottom
             else:  # Gray
                 self.patched[a:b, c-bbt:c] = [255]  # Left
                 self.patched[a:b, d:d+bbt] = [255]  # Right
@@ -315,8 +322,13 @@ def salience_scan(image, rankCount=3, boundLength=32):
 
         # Grab Maximally Intense Pixel Coordinates (Object Center)
         indices = np.where(smap == smap.max())
-        R = indices[0][0]  # Row
-        C = indices[1][0]  # Column
+        try:
+            R = indices[0][0]  # Row
+            C = indices[1][0]  # Column
+        except IndexError:
+            print("Image is probably black")
+            R = boundLength
+            C = boundLength
 
         # If list of objects is empty, add a new object
         flag = False
@@ -349,7 +361,7 @@ def salience_scan(image, rankCount=3, boundLength=32):
                     smap[j][k] = 0
 
 
-def salScan(image, rankCount=5, boundLength=32):
+def salScan(image, rankCount=3, boundLength=32):
 
     ''' Saliency Map Scan
     salmap - Generated Saliency Map
@@ -371,12 +383,18 @@ def salScan(image, rankCount=5, boundLength=32):
 
         # Grab Maximally Intense Pixel Coordinates (Object Center)
         indices = np.where(smap == smap.max())
-        R = indices[0][0]
-        C = indices[1][0]
+        try:
+            R = indices[0][0]
+            C = indices[1][0]
+            if (smap[R, C] < 0.137):
+                continue
+        except IndexError:
+            print("Image is probably black")
+            R = boundLength
+            C = boundLength
 
         # Use defined gamma kernel orders to bound pixel distances
         for gk in range(1, len(image.k), 2):
-            boundLength = image.k[-1]
             boxSize = {'Row': boundLength, 'Column': boundLength}
 
             # Derive upper left coordinate of bounding region
@@ -404,7 +422,7 @@ def salScan(image, rankCount=5, boundLength=32):
 #            else:
                 # Append coordinates to image object's bounding box member
             image.bb_coords.append([R1, R2, C1, C2])
-            image.center_coord.append([indices[0][0], indices[1][0]])
+#            image.center_coord.append([indices[0][0], indices[1][0]])
             break
 
 

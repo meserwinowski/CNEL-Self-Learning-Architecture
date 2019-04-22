@@ -12,6 +12,9 @@ import pyglet
 import sys
 import ctypes
 import os
+import cv2
+import re
+import errno
 
 from pyglet import clock
 from pyglet.window import key as keycodes
@@ -25,6 +28,47 @@ import retro
 # resume from bk2
 
 SAVE_PERIOD = 60  # frames
+numbers = re.compile(r'(\d+)')
+
+
+def numericalSort(x):
+    parts = numbers.split(x)
+    parts[1::2] = map(int, parts[1::2])
+    return parts
+
+
+def save_image(img, path, name):
+    if (len(img.shape) != 2):
+        img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+    if (os.path.isdir(path)):
+        cv2.imwrite(os.path.join(path, name), img)
+    else:
+        os.makedirs(path)
+        cv2.imwrite(os.path.join(path, name), img)
+
+
+def output_video(output, path):
+    for image in sorted(os.listdir(path), key=numericalSort):
+        image_path = os.path.join(path, image)  # Grab image path
+        frame = cv2.imread(image_path)  # Grab image data from path
+        output.write(frame)  # Write out frame to video
+        if (cv2.waitKey(1) & 0xFF) == ord('q'):  # Hit 'q' to exit
+            break
+
+
+def delete_images(path):
+    for image in os.listdir(path):
+        os.remove(os.path.join(path, image))
+
+
+def delete_directory(path):
+    for image in os.listdir(path):
+        os.rmdir(os.path.join(path, image))
+    try:
+        os.rmdir(path)  # Remove temporary image directory
+    except OSError as e:
+        print("Directory specified for removal probably not empty")
+        print(e)
 
 
 class buttoncodes:
@@ -76,6 +120,15 @@ def main():
         for state in sorted(retro.data.list_states(args.game)):
             print(state)
         sys.exit(1)
+
+    mfile = '%s-%s-%04d' % (args.game, args.state, 0)
+    dir_path = os.getcwd() + mfile + '/'
+    output = mfile + '.mp4'  # Video file extension
+    try:
+        os.makedirs(dir_path)  # Create temporary image directory
+    except OSError as e:
+        if e.errno != errno.EEXIST:  # Handle directory already existing
+            raise
 
     env = retro.make(args.game,
                      args.state or retro.State.DEFAULT,
@@ -184,6 +237,14 @@ def main():
                     print('saving %d/%d' % (step, len(recorded_actions)))
                 env.step(act)
             env.stop_record()
+            print("creating mp4")
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+#            print("TEST ", win_width, " ", win_height)
+            out = cv2.VideoWriter(output, fourcc, 60.0, (win_width, win_height))
+            output_video(out, dir_path + "original/")
+            delete_images(dir_path + "original/")
+            out.release()
+            delete_directory(dir_path)
             print('complete')
             sys.exit(1)
 
@@ -214,6 +275,15 @@ def main():
         if steps % SAVE_PERIOD == 0:
             recorded_states.append((steps, env.em.get_state()))
         obs, rew, done, info = env.step(action)
+        if (steps == 0):
+            print("win_width: ", win_width)
+            print("win_width: ", win_height)
+            height, width, channels = obs.shape
+            win_height = height
+            win_width = width
+            print("H: ", height, "W: ", width, "C: ", channels)
+        image_name = str(steps) + '.png'
+        save_image(obs, dir_path + "original/", image_name)
         recorded_actions.append(action)
         steps += 1
 
