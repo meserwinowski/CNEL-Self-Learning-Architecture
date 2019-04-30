@@ -4,7 +4,8 @@ Created on Fri Oct  5 11:55:52 2018
 
 @author: meser
 
-focus_of_attention_video_test.py -
+focus_of_attention_video_test.py - Open an mp4 file and apply the focus of
+attention algorithm to the video.
 
 """
 
@@ -16,8 +17,10 @@ import errno
 
 # 3P Imports
 import matplotlib.pyplot as plt
+import numpy as np
 import cv2
 import re
+from PIL import Image
 
 # Local Imports
 import focus_of_attention as foa
@@ -45,13 +48,8 @@ def output_video(output, path):
 
 
 def save_image(img, path, name):
-#    if (len(img.shape) != 2):
-#        img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-    if (os.path.isdir(path)):
-        cv2.imwrite(os.path.join(path, name), img)
-    else:
-        os.makedirs(path)
-        cv2.imwrite(os.path.join(path, name), img)
+    os.makedirs(path, exist_ok=True)
+    cv2.imwrite(os.path.join(path, name), img)
 
 
 def delete_images(path):
@@ -74,7 +72,8 @@ if __name__ == '__main__':
     plt.close('all')
 
 #    file = sys.argv[1]
-    file = "./SuperMarioWorld.mp4"
+#    file = "./SuperMarioWorld.mp4"
+    file = "./SuperMarioWorld-Snes-YoshiIsland1-0001.mp4"
 
     print("Render File: ", file)
 
@@ -86,7 +85,7 @@ if __name__ == '__main__':
     frame_count = 0
 
     # Working Directory + Name of bk2 file
-    file = file[:-4].split('/')[-1]
+    file = file[:-4].split('/')[-1]  # Get file name
     dir_path = os.getcwd() + '/Super Mario Gym/' + file + '/'
     ext = '.png'  # Image extension
     output = file + '.mp4'  # Video file extension
@@ -97,7 +96,7 @@ if __name__ == '__main__':
 
     # Read first frame
     success, image = movie.read()
-    print("SUCCESS: ", success)
+    print("FIRST READ SUCCESS: ", success)
 
     # Get image dimensions: Mario - 224x256x3
     height, width, channels = image.shape
@@ -109,6 +108,8 @@ if __name__ == '__main__':
 
     # Generate Gamma Kernel
     image_curr = foa.imageObject(image, fc=frame)
+    image_prev = image_curr
+    image_prev.salience_map = np.zeros(image_prev.original.shape[:-1])
     kernel = foa.gamma_kernel(image_curr)
 
     # Step through each movie frame
@@ -122,41 +123,61 @@ if __name__ == '__main__':
 
         if (frame % 100 == 0):
             stop = time.time()
-            print("Salience Map Gen 100: ", stop - start, " seconds")
+            print("Salience Map Gen ", frame, ": ", stop - start, " seconds")
             start = time.time()
 
         # Bound and Rank the most Salient Regions of Saliency Map
+#        image_curr.salience_map = np.subtract(image_curr.salience_map, image_prev.salience_map)
+#        image_curr.salience_map *= (image_curr.salience_map > 0.12)
         foa.salScan(image_curr)
 
         # Bounding Box images
-        image_curr.draw_image_patches()
+        image_curr.draw_image_patches(salmap=False)
         save_image(image_curr.salience_map * 255, dir_path + "salience/",
                    image_name)
         save_image(image_curr.patched, dir_path + "bounding_box/",
                    image_name)
+        
+        # Create combined image
+        img1 = Image.open(dir_path + "salience/" + image_name)
+        img2 = Image.open(dir_path + "bounding_box/" + image_name)
+        result = Image.new('RGB', (2 * width, height))
+        result.paste(im=img1, box=(0, 0))
+        result.paste(im=img2, box=(width, 0))
+        save_image(cv2.cvtColor(np.array(result), cv2.COLOR_BGR2RGB),
+                   dir_path + "combine/", image_name)
 
         # Next Frame
         success, image = movie.read()
+        image_prev = image_curr
 
     # Convert generated images into an mp4
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
 #    out = cv2.VideoWriter(output, fourcc, 60.0, (width, height))
 #    out_patch = cv2.VideoWriter(output_patch, fourcc, 16.0, (32, 32))
 
-    # Delete saliency map images
-    print("Saliency Video + Delete Images")
-    output = file + "_sal" + ".mp4"
-    out = cv2.VideoWriter(output, fourcc, 60.0, (width, height))
-    output_video(out, dir_path + "salience/")
+    # Combined saliency map and bounding box images
+    print("Saliency/Bounding Box Video +  Delete Images")
+    output = file + "_combine" + ".mp4"
+    out = cv2.VideoWriter(output, fourcc, 60.0, (2 * width, height))
+    output_video(out, dir_path + "combine/")
     out.release()
-    delete_images(dir_path + "salience/")
+    delete_images(dir_path + "combine/")
 
-    # Delete  bounding box images
-    print("Bounding Box Video + Delete Images")
-    output = file + "_bb" + ".mp4"
-    out = cv2.VideoWriter(output, fourcc, 60.0, (width, height))
-    output_video(out, dir_path + "bounding_box/")
-    out.release()
+#    # Delete saliency map images
+#    print("Saliency Video + Delete Images")
+#    output = file + "_sal" + ".mp4"
+#    out = cv2.VideoWriter(output, fourcc, 60.0, (width, height))
+#    output_video(out, dir_path + "salience/")
+#    out.release()
+    delete_images(dir_path + "salience/")
+#
+#    # Delete  bounding box images
+#    print("Bounding Box Video + Delete Images")
+#    output = file + "_bb" + ".mp4"
+#    out = cv2.VideoWriter(output, fourcc, 60.0, (width, height))
+#    output_video(out, dir_path + "bounding_box/")
+#    out.release()
     delete_images(dir_path + "bounding_box/")
 
     # Delete image patches
@@ -164,6 +185,7 @@ if __name__ == '__main__':
 #    delete_images(dir_path, images_patch)
 
 #    out_patch.release()
+    movie.release()
     cv2.destroyAllWindows()  # Kills python process windows
     delete_directory(dir_path)
 

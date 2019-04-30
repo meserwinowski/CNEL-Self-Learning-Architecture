@@ -112,7 +112,7 @@ class imageObject():
     # Gamma Filter Order, Shape, and Exponentiation Parameters
     k = np.array([1, 25, 1, 30, 1, 35], dtype=float)  # Orders
     mu = np.array([4, 4, 4, 4, 4, 4], dtype=float)  # Shapes
-    alpha = 3  # Exponentiation
+    alpha = 3 # Exponentiation
 
     # Image Maps
     original = np.array([])  # Original Image
@@ -252,10 +252,12 @@ class imageObject():
 
         # Create image patches
         save_path = path + 'patches/'
-        try:
-            os.makedirs(save_path)  # Create temporary image directory
-        except OSError as e:
-            pass
+
+        # Create temporary image directory
+#        try:
+        os.makedirs(save_path, exist_ok=True)
+#        except OSError as e:
+#            pass
         try:
             for i in range(3):
                 subf = 'obj' + str(i) + '/'
@@ -426,7 +428,7 @@ def salScan(image, rankCount=3, boundLength=32):
             break
 
 
-def gamma_kernel(image, maskSize=26):
+def gamma_kernel(image, maskSize=16, d=2):
 
     ''' Generate a 2D Gamma Kernel
     k - vector contained kernel orders
