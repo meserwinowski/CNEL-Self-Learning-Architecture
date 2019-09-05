@@ -133,7 +133,7 @@ class imageObject():
         ''' Initialization '''
 
         # Extract image name, path, and extension
-#        self.file_parse(img)
+        self.file_parse(img)
         self.original = img
 
         # Convert image to CIELAB Color Space
@@ -164,7 +164,7 @@ class imageObject():
 
         if (self.rgb):  # If image is RGB...
             # Read original image into object
-#            self.original = io.imread(self.path + self.name + self.ext)
+            self.original = io.imread(self.path + self.name + self.ext)
 
             # Convert RGB to CIELAB
             self.modified = color.rgb2lab(self.original)
@@ -251,7 +251,7 @@ class imageObject():
         specified directories. '''
 
         # Create image patches
-        save_path = path + 'patches/'
+        save_path = path + '/patches/'
 
         # Create temporary image directory
 #        try:
