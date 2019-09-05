@@ -17,7 +17,9 @@ import time
 import matplotlib.pyplot as plt
 
 # Local Imports
-import focus_of_attention as foa
+import foa_image as foai
+import foa_convolution as foac
+import foa_saliency as foas
 
 plt.rcParams.update({'font.size': 22})
 
@@ -28,46 +30,46 @@ if __name__ == '__main__':
 
     # Open test images as 8-bit RGB values - Time ~0.0778813
     file = "./SMW_Test_Image.png"
-    mario = foa.imageObject(file)
+    mario = foai.ImageObject(file)
     file = "./AIM/eyetrackingdata/original_images/22.jpg"
-    banana = foa.imageObject(file)
+    banana = foai.ImageObject(file)
     file = "./AIM/eyetrackingdata/original_images/120.jpg"
-    corner = foa.imageObject(file)
+    corner = foai.ImageObject(file)
 
     # Test Image
-    testIMG = mario
+    test_image = mario
 
 # %% Generate Saliency Map
 
     # Generate Gaussian Blur Prior - Time ~0.0020006
-    foveation_prior = foa.matlab_style_gauss2D(testIMG.modified.shape, 300)
+    foveation_prior = foac.matlab_style_gauss2D(test_image.modified.shape, 300)
 
     # Generate Gamma Kernel
-    kernel = foa.gamma_kernel(testIMG)
+    kernel = foac.gamma_kernel(test_image)
 
     # Generate Saliency Map
     start = time.time()
-    foa.foa_convolution(testIMG, kernel, foveation_prior)
+    foac.convolution(test_image, kernel, foveation_prior)
     stop = time.time()
     print("Salience Map Generation: ", stop - start, " seconds")
 
     # Bound and Rank the most Salient Regions of Saliency Map
-    foa.salience_scan(testIMG, rankCount=5)
+    foas.salience_scan(test_image, rankCount=6)
 
 # %% Plot Results
 
     # Plot Bounding Box Patches
-    testIMG.draw_image_patches()
-    testIMG.save_image_patches()
+    test_image.draw_image_patches()
+    test_image.save_image_patches()
 
     # Create a figure with 2 subplots
     fig, (ax1, ax2) = plt.subplots(1, 2)
     ax1.set_title('Original')
     ax2.set_title('Saliency Map')
-    if (testIMG.rgb):
-        ax1.imshow(testIMG.patched)
+    if (test_image.rgb):
+        ax1.imshow(test_image.patched)
     else:
-        testIMG.modified.astype(int)
-        ax1.imshow(testIMG.modified)
-    ax2.imshow(testIMG.salience_map)
+        test_image.modified.astype(int)
+        ax1.imshow(test_image.modified)
+    ax2.imshow(test_image.salience_map)
     plt.show()

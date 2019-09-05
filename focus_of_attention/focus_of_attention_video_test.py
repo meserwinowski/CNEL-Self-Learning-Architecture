@@ -10,20 +10,22 @@ attention algorithm to the video.
 """
 
 # Standard Library Imports
-import sys
-import os
-import time
 import errno
+import os
+import sys
+import time
 
 # 3P Imports
+import cv2
 import matplotlib.pyplot as plt
 import numpy as np
-import cv2
-import re
 from PIL import Image
+import re
 
 # Local Imports
-import focus_of_attention as foa
+import foa_image as foai
+import foa_convolution as foac
+import foa_saliency as foas
 
 plt.rcParams.update({'font.size': 22})
 
@@ -104,22 +106,22 @@ if __name__ == '__main__':
     start = time.time()
 
     # Generate Gaussian Blur Prior - Time ~0.0020006
-    prior = foa.matlab_style_gauss2D(image.shape, 300)
+    prior = foac.matlab_style_gauss2D(image.shape, 300)
 
     # Generate Gamma Kernel
-    image_curr = foa.imageObject(image, fc=frame)
+    image_curr = foai.ImageObject(image, fc=frame)
     image_prev = image_curr
     image_prev.salience_map = np.zeros(image_prev.original.shape[:-1])
-    kernel = foa.gamma_kernel(image_curr)
+    kernel = foac.gamma_kernel(image_curr)
 
     # Step through each movie frame
     while success:
         frame += 1
         image_name = str(frame) + ext
-        image_curr = foa.imageObject(image, fc=frame)
+        image_curr = foai.ImageObject(image, fc=frame)
 
         # Generate Saliency Map with Gamma Filter
-        foa.foa_convolution(image_curr, kernel, prior)
+        foac.convolution(image_curr, kernel, prior)
 
         if (frame % 100 == 0):
             stop = time.time()
@@ -129,23 +131,25 @@ if __name__ == '__main__':
         # Bound and Rank the most Salient Regions of Saliency Map
 #        image_curr.salience_map = np.subtract(image_curr.salience_map, image_prev.salience_map)
 #        image_curr.salience_map *= (image_curr.salience_map > 0.12)
-        foa.salScan(image_curr)
+        foas.salience_scan(image_curr)
 
         # Bounding Box images
         image_curr.draw_image_patches(salmap=False)
+        image_curr.save_image_patches()
         save_image(image_curr.salience_map * 255, dir_path + "salience/",
                    image_name)
         save_image(image_curr.patched, dir_path + "bounding_box/",
                    image_name)
-        
+
         # Create combined image
         img1 = Image.open(dir_path + "salience/" + image_name)
         img2 = Image.open(dir_path + "bounding_box/" + image_name)
         result = Image.new('RGB', (2 * width, height))
         result.paste(im=img1, box=(0, 0))
         result.paste(im=img2, box=(width, 0))
-        save_image(cv2.cvtColor(np.array(result), cv2.COLOR_BGR2RGB),
-                   dir_path + "combine/", image_name)
+#        save_image(cv2.cvtColor(np.array(result), cv2.COLOR_BGR2RGB),
+#                   dir_path + "combine/", image_name)
+        save_image(np.array(result), dir_path + "combine/", image_name)
 
         # Next Frame
         success, image = movie.read()
@@ -157,7 +161,7 @@ if __name__ == '__main__':
 #    out_patch = cv2.VideoWriter(output_patch, fourcc, 16.0, (32, 32))
 
     # Combined saliency map and bounding box images
-    print("Saliency/Bounding Box Video +  Delete Images")
+    print("Saliency/Bounding Box Video + Delete Images")
     output = file + "_combine" + ".mp4"
     out = cv2.VideoWriter(output, fourcc, 60.0, (2 * width, height))
     output_video(out, dir_path + "combine/")
