@@ -1,0 +1,11 @@
+# Folders
+__pycache__/
+papers/
+reports/
+
+# Files
+
+# Extensions
+**/*.bk2
+**/*.mp4
+**/*.pyc
