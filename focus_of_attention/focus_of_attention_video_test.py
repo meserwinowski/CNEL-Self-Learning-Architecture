@@ -19,6 +19,7 @@ import time
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 from PIL import Image
 import re
 
@@ -69,32 +70,58 @@ def delete_directory(path):
         print(e)
 
 
+def build_bounding_box(coords, boundLength=32):
+    # Take most recent center coordinate
+    R = coords[0]
+    C = coords[1]
+
+    # Dictionary for Clarity
+    boxSize = {'Row': boundLength, 'Column': boundLength}
+
+    # Derive upper left coordinate of bounding region
+    R1 = int(R - (boxSize['Row'] / 2))
+    if (R1 < 0):
+        R1 = 0
+    C1 = int(C - (boxSize['Column'] / 2))
+    if (C1 < 0):
+        C1 = 0
+
+    # Derive lower right coordinate of bounding region
+    R2 = int(R + (boxSize['Row'] / 2))
+    if (R2 > 223):
+        R2 = 223
+    C2 = int(C + (boxSize['Column'] / 2))
+    if (C2 > 255):
+        C2 = 255
+
+    return np.array([[R1, R2, C1, C2]])
+
+
 # Main Routine
 if __name__ == '__main__':
     plt.close('all')
 
 #    file = sys.argv[1]
 #    file = "./SuperMarioWorld.mp4"
-    file = "./SuperMarioWorld-Snes-YoshiIsland1-0001.mp4"
-
-    print("Render File: ", file)
-
-    # Open mp4 file
-    movie = cv2.VideoCapture(file)
+#    file = "./SuperMarioWorld-Snes-YoshiIsland1-0001.mp4"
+    file = "SuperMarioWorld-Snes-Start-0000"
 
     frame = 0
     framerate = 1
     frame_count = 0
 
     # Working Directory + Name of bk2 file
-    file = file[:-4].split('/')[-1]  # Get file name
+#    file = file[:-4].split('/')[-1]  # Get file name
     dir_path = os.getcwd() + '/Super Mario Gym/' + file + '/'
     ext = '.png'  # Image extension
-    output = file + '.mp4'  # Video file extension
-    output_patch = file + '_patch_' + '.mp4'
+    inputfile = file + '.mp4'  # Video file extension
+    output = file + '_patch' + '.mp4'
 
     # Create temporary image directory
     os.makedirs(dir_path, exist_ok=True)
+
+    # Open mp4 file
+    movie = cv2.VideoCapture(dir_path + inputfile)
 
     # Read first frame
     success, image = movie.read()
@@ -104,6 +131,9 @@ if __name__ == '__main__':
     height, width, channels = image.shape
     print("H: ", height, "W: ", width, "C: ", channels)
     start = time.time()
+
+    # Open Ground Truth CSV
+    ground_truth = pd.read_csv(dir_path + "super_mario_world_info.csv")
 
     # Generate Gaussian Blur Prior - Time ~0.0020006
     prior = foac.matlab_style_gauss2D(image.shape, 300)
@@ -116,6 +146,8 @@ if __name__ == '__main__':
 
     # Step through each movie frame
     while success:
+
+        # Create Image Object
         frame += 1
         image_name = str(frame) + ext
         image_curr = foai.ImageObject(image, fc=frame)
@@ -123,6 +155,21 @@ if __name__ == '__main__':
         # Generate Saliency Map with Gamma Filter
         foac.convolution(image_curr, kernel, prior)
 
+        # Attached ground truth
+        try:
+            x = ground_truth["mario_lower_x"][frame + 1]
+            y = ground_truth["mario_lower_y"][frame + 1]
+            image_curr.gt_coords.append(foas.build_bounding_box([x + 6, y + 8]))
+            x = ground_truth["test1_x"][frame + 1]
+            y = ground_truth["test1_y"][frame + 1]
+            image_curr.gt_coords.append(foas.build_bounding_box([x, y]))
+            x = ground_truth["test2_x"][frame + 1]
+            y = ground_truth["test2_y"][frame + 1]
+            image_curr.gt_coords.append(foas.build_bounding_box([x, y]))
+        except(KeyError):
+            pass
+
+        # Display progress
         if (frame % 100 == 0):
             stop = time.time()
             print("Salience Map Gen ", frame, ": ", stop - start, " seconds")
@@ -134,11 +181,11 @@ if __name__ == '__main__':
         foas.salience_scan(image_curr)
 
         # Bounding Box images
-        image_curr.draw_image_patches(salmap=False)
-        image_curr.save_image_patches()
+        image_curr.draw_image_patches()
         save_image(image_curr.salience_map * 255, dir_path + "salience/",
                    image_name)
-        save_image(image_curr.patched, dir_path + "bounding_box/",
+        save_image(cv2.cvtColor(image_curr.patched, cv2.COLOR_BGR2RGB),
+                   dir_path + "bounding_box/",
                    image_name)
 
         # Create combined image
@@ -175,13 +222,14 @@ if __name__ == '__main__':
 #    output_video(out, dir_path + "salience/")
 #    out.release()
     delete_images(dir_path + "salience/")
-#
-#    # Delete  bounding box images
-#    print("Bounding Box Video + Delete Images")
-#    output = file + "_bb" + ".mp4"
-#    out = cv2.VideoWriter(output, fourcc, 60.0, (width, height))
-#    output_video(out, dir_path + "bounding_box/")
-#    out.release()
+
+    print("Bounding Box Video + Delete Images")
+    output = file + "_bb" + ".mp4"
+    out = cv2.VideoWriter(output, fourcc, 60.0, (width, height))
+    output_video(out, dir_path + "bounding_box/")
+    out.release()
+
+    # Delete bounding box images
     delete_images(dir_path + "bounding_box/")
 
     # Delete image patches
@@ -191,6 +239,6 @@ if __name__ == '__main__':
 #    out_patch.release()
     movie.release()
     cv2.destroyAllWindows()  # Kills python process windows
-    delete_directory(dir_path)
+#    delete_directory(dir_path)
 
     print("Number of Rendered Frames: ", frame)

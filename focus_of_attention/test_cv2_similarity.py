@@ -56,12 +56,12 @@ if __name__ == "__main__":
             image_matrix[row, col] = compare_images(i, j, methods[1])
             col = col + 1
         row = row + 1
-    
+
     # Plot matrix
     y_true = [2, 0, 2, 2, 0, 1]
     y_pred = [0, 0, 2, 2, 0, 2]
     cm = confusion_matrix(y_true, y_pred, )
-    
+
     fig, ax = plt.subplots()
     im = ax.imshow(image_matrix, interpolation='nearest', cmap=plt.cm.Blues)
     ax.figure.colorbar(im, ax=ax)
@@ -78,5 +78,5 @@ if __name__ == "__main__":
     # Rotate the tick labels and set their alignment.
     plt.setp(ax.get_xticklabels(), rotation=45, ha="right",
              rotation_mode="anchor")
-    
+
     plt.show()

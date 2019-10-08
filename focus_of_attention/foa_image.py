@@ -12,15 +12,12 @@ implementation and results created by Ryan Burt.
 """
 
 # Standard Library Imports
-import errno
-import os
 
 # 3P Imports
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 from skimage import color
-from PIL import Image
 
 # Local Imports
 
@@ -34,14 +31,9 @@ class ImageObject():
 
     path = ''   # Folder Path
     name = ''   # Image Name
-    ext = '.png'   # Image Extension
+    ext = '.'   # Image Extension
     rgb = True  # RGB Boolean
     fc = 0      # Frame Count
-
-    # Gamma Filter Order, Shape, and Exponentiation Parameters
-    k = np.array([1, 25, 1, 30, 1, 35], dtype=float)  # Orders
-    mu = np.array([4, 4, 4, 4, 4, 4], dtype=float)  # Shapes
-    alpha = 3  # Exponentiation
 
     # Image Maps
     original = np.array([])  # Original Image
@@ -54,26 +46,25 @@ class ImageObject():
     patch_list = []  # List of objects in the frame
 
     # Bounding Box Metadata
-    bb_coords = []  # Bounding Box Coordinates - Ranked by order in the list
-    center_coord = []  # Approximate center pixel of objects
+    gt_coords = []  # Coordinates derived from ground truth data
+    bb_coords = []  # Bounding box coordinates by FoA - Ranked by intensity
 
     def __init__(self, img, rgb=rgb, fc=0):
 
         ''' Initialization '''
 
-        self.bb_coords = []
-
         if (isinstance(img, str)):
             # Extract image name, path, and extension
             self.file_parse(img)
-            image_path = self.path + self.name + self.ext
-            self.original = cv2.imread(image_path, cv2.IMREAD_COLOR)
+            self.original = cv2.imread(img, cv2.IMREAD_COLOR)
         else:
             self.original = img
 
         # Convert image to CIELAB Color Space
         self.image_convert()
-
+        
+        self.bb_coords = []
+        self.gt_coords = []
         self.rgb = rgb
         self.fc = fc
 
@@ -81,6 +72,7 @@ class ImageObject():
 
         ''' Discretize file path, name, and extension '''
 
+        # Current Directory
         if (file[0] == '.'):
             file = file[1:]
 
@@ -101,117 +93,69 @@ class ImageObject():
 
     def image_convert(self):
 
-        ''' Get image from path and convert RGB image to CIELAB Color Space '''
+        ''' Convert RGB image to CIELAB Color Space '''
 
-        if (self.rgb):  # If image is RGB...
+        if (self.rgb):  # Image is RGB
             # Read original image into object
             self.original = cv2.cvtColor(self.original, cv2.COLOR_BGR2RGB)
 
             # Convert RGB to CIELAB
             self.modified = color.rgb2lab(self.original)
 
-        else:  # Image is Gray
-            # Rename image object
-            self.name = self.name + '_gray'
-
-            # Reopen image as gray scale
-#            gim = Image.open(self.path + self.name + self.ext).convert('LA')
-            gim = self.original.convert('LA')
-            self.img = np.array(gim)[:, :, 0]
-
-    def gray_convert(self):
-
-        ''' Convert an image to gray scale '''
-
-        # Attempt Gray Scale Conversion - Saves new gray scale image
-        try:
-            # Open original image as gray scale
-            gim = Image.open(self.path +
-                             self.name +
-                             self.ext).convert('LA')
-
-            # Save a gray version for future reference
-            gim.save(self.path + self.name + '_gray' + self.ext)
-        except IOError:
-            try:
-                # Try saving as .png if default extension fails
-                gim.save(self.path + self.name + '_gray' + '.png')
-            except IOError:
-                print("Gray conversion save failed")
-
-    def display_image(self, img, title):
+    def display_map(self, img, title):
         plt.figure()
         plt.title(title)
         plt.imshow(img)
         plt.show()
 
     def plot_original_map(self):
-        self.display_image(self.original, "Original Image")
+        self.display_map(self.original, "Original Image")
+
+    def plot_modified_map(self):
+        self.display_map(self.modified, "Original Image")
 
     def plot_saliency_map(self):
-        self.display_image(self.salience_map, "Saliency Map")
+        self.display_map(self.salience_map, "Saliency Map")
 
-    def draw_image_patches(self, bbt=1, salmap=True, plot=False):
+    def draw_image_patches(self, bbt=1, salmap=False):
 
-        ''' Apply bounding boxes to original image in the patched map. Boolean
-        value decides if the patches from the image will be saved. '''
+        ''' Apply bounding boxes to original image in the patched map.
+        bbt - Bounding box line thickness
+        salmap - Apply bounding boxes to saliency map '''
 
         # Copy the original image
         self.patched = np.copy(self.original)
 
-        # Place a bounding box on max intensity regions
+        # Draw bounding boxes for ground truth
+        for o in self.gt_coords:
+            lc = [100, 150, 255]  # Line Color - Blue
+            self._draw(o, lc, bbt, salmap)
+
+        # Draw bounding boxes on max intensity regions
         for o in self.bb_coords:
+            lc = [255, 150, 100]  # Line Color - Red
+            self._draw(o, lc, bbt, salmap)
 
-            # Grab bounding coordinates
-            a = o[0]
-            b = o[1]
-            c = o[2]
-            d = o[3]
+    def _draw(self, obj, lc, bbt=int, salmap=bool):
 
-            # Draw bounding boxes on patched map
-            if (self.rgb):  # RGB
-                lc = [255, 150, 100]  # Line Color
-                self.patched[a:b, c-bbt:c] = lc  # Left
-                self.patched[a:b, d:d+bbt] = lc  # Right
-                self.patched[a-bbt:a, c:d] = lc  # Top
-                self.patched[b:b+bbt, c:d] = lc  # Bottom
-                if (salmap):  # Salience Map
-                    self.salience_map[a:b, c-bbt:c] = 1.0  # Left
-                    self.salience_map[a:b, d:d+bbt] = 1.0  # Right
-                    self.salience_map[a-bbt:a, c:d] = 1.0  # Top
-                    self.salience_map[b:b+bbt, c:d] = 1.0  # Bottom
-            else:  # Gray
-                self.patched[a:b, c-bbt:c] = [255]  # Left
-                self.patched[a:b, d:d+bbt] = [255]  # Right
-                self.patched[a-bbt:a, c:d] = [255]  # Top
-                self.patched[b:b+bbt, c:d] = [255]  # Bottom
+        ''' Helper method for drawing bounding boxes '''
 
-    def save_image_patches(self, path=os.getcwd()):
+        # Get bounding coordinates
+        a = obj[0]  # R1
+        b = obj[1]  # R2
+        c = obj[2]  # C1
+        d = obj[3]  # C2
 
-        ''' Save image patches from the current image to
-        specified directories. '''
+        # Draw bounding boxes on patched map
+        if (self.rgb):  # RGB
+            self.patched[a:b, c-bbt:c] = lc  # Left
+            self.patched[a:b, d:d+bbt] = lc  # Right
+            self.patched[a-bbt:a, c:d] = lc  # Top
+            self.patched[b:b+bbt, c:d] = lc  # Bottom
 
-        # Create image patches
-        save_path = path + '/patches/'
-        print("SAVE: ", save_path)
-
-        # Create temporary image directory
-        os.makedirs(save_path, exist_ok=True)
-        try:
-            for i in range(len(self.patch_list)):
-                subf = 'obj' + str(i) + '/'
-                print(subf)
-                os.makedirs(save_path + subf)
-        except OSError:
-            pass
-        i = 0
-
-        for o in self.patch_list:
-            patch_name = str(self.fc) + '_' + str(i) + self.ext
-            subf = 'obj' + str(i) + '/'
-            o.patch_name_list.append(patch_name)
-            patch_image = self.original[o.bb_coords[-1][0]:o.bb_coords[-1][1],
-                                        o.bb_coords[-1][2]:o.bb_coords[-1][3]]
-            cv2.imwrite(os.path.join(save_path + subf, patch_name),
-                        cv2.cvtColor(patch_image, cv2.COLOR_RGB2BGR))
-            i += 1
+            # Salience Map
+            if (salmap):
+                self.salience_map[a:b, c-bbt:c] = 1.0  # Left
+                self.salience_map[a:b, d:d+bbt] = 1.0  # Right
+                self.salience_map[a-bbt:a, c:d] = 1.0  # Top
+                self.salience_map[b:b+bbt, c:d] = 1.0  # Bottom

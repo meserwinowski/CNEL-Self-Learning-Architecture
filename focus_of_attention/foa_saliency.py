@@ -16,92 +16,56 @@ import cv2
 import numpy as np
 
 # Local Imports
+from foa_image import ImageObject
 
 
-class SalObject():
+def build_bounding_box(center, boundLength=32):
 
-    ''' Specific object detected in an image. The object contains coordinates
-    to better track it in a pixel positional context. '''
+    ''' Generate the coordinates that defined a square region
+    around the detected region of interest.
+    center - Center coords of the object
+    boundLength - Length and width of the square saliency region '''
 
-    center_coord = []
-    bb_coords = []
-    patch_name_list = []
+    # Take most recent center coordinate
+    R = center[0]
+    C = center[1]
 
-    def __init__(self, center_coord=center_coord):
-        self.center_coord = [center_coord]
-        self.bb_coords = []
+    # Dictionary for Clarity
+    boxSize = {'Row': boundLength, 'Column': boundLength}
 
-    def object_compare(self, new_coord, frame):
-        for o in frame.patch_list:
-            if new_coord == o.center_coord[-1]:
-                return False
-        return True
+    # Derive upper left coordinate of bounding region
+    R1 = int(R - (boxSize['Row'] / 2))
+    if (R1 < 0):
+        R1 = 0
+    C1 = int(C - (boxSize['Column'] / 2))
+    if (C1 < 0):
+        C1 = 0
 
-    def center_check(self, new_center_coord, frame):
-        # Check if center_coord list is empty
-        if not self.center_coord:
-            self.center_coord = [new_center_coord]
-            return False
+    # Derive lower right coordinate of bounding region
+    R2 = int(R + (boxSize['Row'] / 2))
+    if (R2 > 223):
+        R2 = 223
+    C2 = int(C + (boxSize['Column'] / 2))
+    if (C2 > 255):
+        C2 = 255
 
-        # Row Difference
-        Rd = new_center_coord[0] - self.center_coord[-1][0]
-
-        # Column Difference
-        Cd = new_center_coord[1] - self.center_coord[-1][1]
-
-        # 2D Eucledian Distance
-        distance = (np.sqrt(Rd ** 2 + Cd ** 2))
-
-        # If distance is within threshold...
-        flag = self.object_compare(new_center_coord, frame)
-        if (distance > 2 and distance < 16 and flag):
-            # Attach this coordinate to the object
-            self.center_coord.append(new_center_coord)
-            return True
-        return False
-
-    def build_bounding_box(self, boundLength=32):
-
-        # Take most recent center coordinate
-        R = self.center_coord[-1][0]
-        C = self.center_coord[-1][1]
-
-        # Dictionary for Clarity
-        boxSize = {'Row': boundLength, 'Column': boundLength}
-
-        # Derive upper left coordinate of bounding region
-        R1 = int(R - (boxSize['Row'] / 2))
-        if (R1 < 0):
-            R1 = 0
-        C1 = int(C - (boxSize['Column'] / 2))
-        if (C1 < 0):
-            C1 = 0
-
-        # Derive lower right coordinate of bounding region
-        R2 = int(R + (boxSize['Row'] / 2))
-        if (R2 > 223):
-            R2 = 223
-        C2 = int(C + (boxSize['Column'] / 2))
-        if (C2 > 255):
-            C2 = 255
-
-        self.bb_coords.append([R1, R2, C1, C2])
+    return [R1, R2, C1, C2]
 
 
-def salience_scan(image, rankCount=4, boundLength=32):
+def salience_scan(image=ImageObject, rankCount=4, boundLength=32):
 
     ''' Saliency Map Scan
-    salmap - Generated Saliency Map
 
     Scan through the saliency map with a square region to find the
     most salient pieces of the image. Done by picking the maximally intense
-    picture and bounding the area around it '''
+    picture and bounding the area around it
+
+    image - ImageObject being scanned
+    rankCount - Number of objects to acquire before stopping
+    boundLength - Length and width of the square saliency region '''
 
     # Copy salience map for processing
     smap = np.copy(image.salience_map)
-
-    # Create a dictionary of the row and column distances from the center pixel
-    boxSize = {'Row': boundLength, 'Column': boundLength}
 
     # Pick out the top 'rankCount' maximally intense regions
     for i in range(rankCount):
@@ -112,40 +76,30 @@ def salience_scan(image, rankCount=4, boundLength=32):
             R = indices[0][0]  # Row
             C = indices[1][0]  # Column
         except IndexError:
-            print("Image is probably black")
+            print("Image has no variation, might just be black")
             R = boundLength
             C = boundLength
 
-        # If list of objects is empty, add a new object
-        flag = False
-        for o in image.patch_list:
+        # Get bounding box coordinates for object
+        coords = build_bounding_box([R, C], boundLength)
 
-            # Check for an object with center coordinates near new coords
-            if o.center_check([R, C], image):
-                # Get updated object
-                obj = o
-                flag = True
-                break
+        # Add coordinates to member list on the image object
+        image.bb_coords.append(coords)
 
-        if not flag:
+        # "Zero" the maximally intense region to avoid selecting it again
+        R1 = coords[0]
+        R2 = coords[1]
+        C1 = coords[2]
+        C2 = coords[3]
 
-            # Create a new object if returned false
-            image.patch_list.append(SalObject([R, C]))
-            obj = image.patch_list[-1]
-
-        obj.build_bounding_box()
-        image.bb_coords.append(obj.bb_coords[-1])
-
-        # "Zero" the maximally intense region to avoid grabbing it again
         # Sum up and find the average intensity of the region
-        total = 0
-        R1 = obj.bb_coords[-1][0]
-        R2 = obj.bb_coords[-1][1]
-        C1 = obj.bb_coords[-1][2]
-        C2 = obj.bb_coords[-1][3]
+        pixel_intensity_sum = 0
+
+        # Traverse through identified region
         for j in range(R1, R2):
             for k in range(C1, C2):
-                if ((j < image.original.shape[0]) and
-                   (k < image.original.shape[1])):
-                    total += image.salience_map[j][k]
-                    smap[j][k] = 0
+                x_dim = image.original.shape[0]
+                y_dim = image.original.shape[1]
+                if ((j < x_dim) and (k < y_dim)):
+                    pixel_intensity_sum += image.salience_map[j][k]
+                    smap[j][k] = 0  # Zero out pixel

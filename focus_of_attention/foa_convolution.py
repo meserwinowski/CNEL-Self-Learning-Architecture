@@ -53,8 +53,9 @@ def gamma_kernel(image, maskSize=16, d=2):
     k - vector contained kernel orders
     mu - vector containing shape parameters '''
 
-    k = image.k
-    mu = image.mu
+    # Gamma Filter Order, Shape
+    k = np.array([1, 25, 1, 30, 1, 35], dtype=float)  # Orders
+    mu = np.array([4, 4, 4, 4, 4, 4], dtype=float)  # Shapes
 
     # Create Kernels and Kernel Mask
     g = np.zeros((len(mu), 2 * maskSize + 1, 2 * maskSize + 1))
@@ -114,7 +115,7 @@ def convolution(image, kernel, prior):
     a saliency map '''
 
     blurSize = 3  # Gaussian Blur - Odd Size Required
-    alpha = image.alpha
+    alpha = 3  # Exponentiation Parameter
     gk = kernel
 
     # Compute Saliency over each scale and apply a Gaussian Blur

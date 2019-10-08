@@ -60,7 +60,6 @@ if __name__ == '__main__':
 
     # Plot Bounding Box Patches
     test_image.draw_image_patches()
-    test_image.save_image_patches()
 
     # Create a figure with 2 subplots
     fig, (ax1, ax2) = plt.subplots(1, 2)
