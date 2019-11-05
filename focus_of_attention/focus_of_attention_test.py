@@ -35,9 +35,11 @@ if __name__ == '__main__':
     banana = foai.ImageObject(file)
     file = "./AIM/eyetrackingdata/original_images/120.jpg"
     corner = foai.ImageObject(file)
-
+    
+    file = "./what.png"
+    mario_old = foai.ImageObject(file)
     # Test Image
-    test_image = mario
+    test_image = mario_old
 
 # %% Generate Saliency Map
 
@@ -54,21 +56,25 @@ if __name__ == '__main__':
     print("Salience Map Generation: ", stop - start, " seconds")
 
     # Bound and Rank the most Salient Regions of Saliency Map
-    foas.salience_scan(test_image, rankCount=6)
+    foas.salience_scan(test_image, rankCount=10)
 
-# %% Plot Results
+# %% Display Results
 
     # Plot Bounding Box Patches
     test_image.draw_image_patches()
+    for i in range(len(test_image.patched_sequence)):
+        test_image.display_map(test_image.patched_sequence[i], f"{i}")
+        
+    test_image.plot_original_map()
 
-    # Create a figure with 2 subplots
-    fig, (ax1, ax2) = plt.subplots(1, 2)
-    ax1.set_title('Original')
-    ax2.set_title('Saliency Map')
-    if (test_image.rgb):
-        ax1.imshow(test_image.patched)
-    else:
-        test_image.modified.astype(int)
-        ax1.imshow(test_image.modified)
-    ax2.imshow(test_image.salience_map)
-    plt.show()
+#    # Create a figure with 2 subplots
+#    fig, (ax1, ax2) = plt.subplots(1, 2)
+#    ax1.set_title('Original')
+#    ax2.set_title('Saliency Map')
+#    if (test_image.rgb):
+#        ax1.imshow(test_image.patched)
+#    else:
+#        test_image.modified.astype(int)
+#        ax1.imshow(test_image.modified)
+#    ax2.imshow(test_image.salience_map)
+#    plt.show()

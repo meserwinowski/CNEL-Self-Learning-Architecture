@@ -39,6 +39,7 @@ class ImageObject():
     original = np.array([])  # Original Image
     modified = np.array([])  # Modified Image - Processed by Gamma Kernel
     patched = np.array([])  # Original Image with image patch bounding boxes
+    patched_sequence = np.array([])
     ground_truth = np.array([])  # Ground Truth Map
     salience_map = np.array([])  # Saliency Map
 
@@ -62,9 +63,10 @@ class ImageObject():
 
         # Convert image to CIELAB Color Space
         self.image_convert()
-        
+
         self.bb_coords = []
         self.gt_coords = []
+        self.patched_sequence = np.array([])
         self.rgb = rgb
         self.fc = fc
 
@@ -103,6 +105,9 @@ class ImageObject():
             self.modified = color.rgb2lab(self.original)
 
     def display_map(self, img, title):
+
+        ''' Plot input image '''
+
         plt.figure()
         plt.title(title)
         plt.imshow(img)
@@ -134,9 +139,9 @@ class ImageObject():
         # Draw bounding boxes on max intensity regions
         for o in self.bb_coords:
             lc = [255, 150, 100]  # Line Color - Red
-            self._draw(o, lc, bbt, salmap)
+            self.__draw(o, lc, bbt, salmap)
 
-    def _draw(self, obj, lc, bbt=int, salmap=bool):
+    def __draw(self, obj, lc, bbt=int, salmap=bool):
 
         ''' Helper method for drawing bounding boxes '''
 

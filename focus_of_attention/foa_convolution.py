@@ -134,9 +134,7 @@ def convolution(image, kernel, prior):
             saliency[:, :, i] = cv2.filter2D(saliency[:, :, i], -1, blur)
 
         # Average Saliency Scales
-        sal_map = (saliency[:, :, 0] +
-                   saliency[:, :, 1] +
-                   saliency[:, :, 2]) / 3
+        sal_map = (saliency[:, :, 0] + saliency[:, :, 1] + saliency[:, :, 2]) / 3
 
     # Monochromatic Images
     else:

@@ -12,8 +12,8 @@ searching for regions of interest to be bounded.
 # Standard Library Imports
 
 # 3P Imports
-import cv2
 import numpy as np
+import matplotlib
 
 # Local Imports
 from foa_image import ImageObject
@@ -66,9 +66,17 @@ def salience_scan(image=ImageObject, rankCount=4, boundLength=32):
 
     # Copy salience map for processing
     smap = np.copy(image.salience_map)
+    image.patched_sequence = np.empty((0, smap.shape[0], smap.shape[1]))
 
     # Pick out the top 'rankCount' maximally intense regions
     for i in range(rankCount):
+        
+        # Copy and Reshape saliency map
+        temp_smap = np.copy(smap)
+        temp_smap = np.reshape(temp_smap, (1, smap.shape[0], smap.shape[1]))
+
+        # Append modified saliency map
+        image.patched_sequence = np.vstack((image.patched_sequence, temp_smap))
 
         # Grab Maximally Intense Pixel Coordinates (Object Center)
         indices = np.where(smap == smap.max())
@@ -76,7 +84,8 @@ def salience_scan(image=ImageObject, rankCount=4, boundLength=32):
             R = indices[0][0]  # Row
             C = indices[1][0]  # Column
         except IndexError:
-            print("Image has no variation, might just be black")
+            if (i == 1):
+                print("Image has no variation, might just be black")
             R = boundLength
             C = boundLength
 
