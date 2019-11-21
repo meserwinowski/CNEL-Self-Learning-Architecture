@@ -10,51 +10,52 @@ searching for regions of interest to be bounded.
 """
 
 # Standard Library Imports
+import sys
 
 # 3P Imports
 import numpy as np
 import matplotlib
+import matplotlib.pyplot as plt
 
 # Local Imports
 from foa_image import ImageObject
+from foa_convolution import matlab_style_gauss2D
 
 
-def build_bounding_box(center, boundLength=32):
-
-    ''' Generate the coordinates that defined a square region
+def build_bounding_box(center, smap, bbox_size=(32, 32)):
+    """ Generate the coordinates that defined a square region
     around the detected region of interest.
     center - Center coords of the object
-    boundLength - Length and width of the square saliency region '''
+    boundLength - Length and width of the square saliency region """
 
     # Take most recent center coordinate
     R = center[0]
     C = center[1]
 
     # Dictionary for Clarity
-    boxSize = {'Row': boundLength, 'Column': boundLength}
+    bbox_size = {'Row': bbox_size[0], 'Column': bbox_size[1]}
 
     # Derive upper left coordinate of bounding region
-    R1 = int(R - (boxSize['Row'] / 2))
+    R1 = int(R - (bbox_size['Row'] / 2))
     if (R1 < 0):
         R1 = 0
-    C1 = int(C - (boxSize['Column'] / 2))
+    C1 = int(C - (bbox_size['Column'] / 2))
     if (C1 < 0):
         C1 = 0
 
     # Derive lower right coordinate of bounding region
-    R2 = int(R + (boxSize['Row'] / 2))
-    if (R2 > 223):
-        R2 = 223
-    C2 = int(C + (boxSize['Column'] / 2))
-    if (C2 > 255):
-        C2 = 255
+    R2 = int(R + (bbox_size['Row'] / 2))
+    if (R2 > smap.shape[1]):
+        R2 = smap.shape[1]
+    C2 = int(C + (bbox_size['Column'] / 2))
+    if (C2 > smap.shape[2]):
+        C2 = smap.shape[2]
 
-    return [R1, R2, C1, C2]
+    return {"top_left": [R1, C1], "bottom_right": [R2, C2]}
 
 
-def salience_scan(image=ImageObject, rankCount=4, boundLength=32):
-
-    ''' Saliency Map Scan
+def salience_scan(image=ImageObject, rank_count=4, bbox_size=(32, 32)):
+    """ Saliency Map Scan
 
     Scan through the saliency map with a square region to find the
     most salient pieces of the image. Done by picking the maximally intense
@@ -62,15 +63,18 @@ def salience_scan(image=ImageObject, rankCount=4, boundLength=32):
 
     image - ImageObject being scanned
     rankCount - Number of objects to acquire before stopping
-    boundLength - Length and width of the square saliency region '''
+    boundLength - Length and width of the square saliency region """
 
     # Copy salience map for processing
     smap = np.copy(image.salience_map)
     image.patched_sequence = np.empty((0, smap.shape[0], smap.shape[1]))
 
+    # Create an inverse Gaussian kernel for removing salient regions
+    inverse_gauss = matlab_style_gauss2D(bbox_size, sigma=15, inverse=True)
+
     # Pick out the top 'rankCount' maximally intense regions
-    for i in range(rankCount):
-        
+    for i in range(rank_count):
+
         # Copy and Reshape saliency map
         temp_smap = np.copy(smap)
         temp_smap = np.reshape(temp_smap, (1, smap.shape[0], smap.shape[1]))
@@ -86,20 +90,21 @@ def salience_scan(image=ImageObject, rankCount=4, boundLength=32):
         except IndexError:
             if (i == 1):
                 print("Image has no variation, might just be black")
-            R = boundLength
-            C = boundLength
+            R = bbox_size[0]
+            C = bbox_size[1]
 
         # Get bounding box coordinates for object
-        coords = build_bounding_box([R, C], boundLength)
+        coords = build_bounding_box([R, C], temp_smap, bbox_size)
+        # print("Coords: ", coords)
 
         # Add coordinates to member list on the image object
         image.bb_coords.append(coords)
 
         # "Zero" the maximally intense region to avoid selecting it again
-        R1 = coords[0]
-        R2 = coords[1]
-        C1 = coords[2]
-        C2 = coords[3]
+        R1 = coords["top_left"][0]
+        C1 = coords["top_left"][1]
+        R2 = coords["bottom_right"][0]
+        C2 = coords["bottom_right"][1]
 
         # Sum up and find the average intensity of the region
         pixel_intensity_sum = 0
@@ -111,4 +116,5 @@ def salience_scan(image=ImageObject, rankCount=4, boundLength=32):
                 y_dim = image.original.shape[1]
                 if ((j < x_dim) and (k < y_dim)):
                     pixel_intensity_sum += image.salience_map[j][k]
-                    smap[j][k] = 0  # Zero out pixel
+                    # smap[j][k] = 0  # Zero out pixel
+                    smap[j][k] *= inverse_gauss[R2 - j - 1][C2 - k - 1]

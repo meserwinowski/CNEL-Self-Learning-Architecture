@@ -4,7 +4,7 @@ Created on Fri Oct  5 11:55:52 2018
 
 @author: meser
 
-focus_of_attention_video_test.py - Open an mp4 file and apply the focus of
+foa_video_test.py - Open an mp4 file and apply the focus of
 attention algorithm to the video.
 
 """

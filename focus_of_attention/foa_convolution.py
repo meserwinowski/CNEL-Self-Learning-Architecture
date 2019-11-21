@@ -15,16 +15,16 @@ import math
 # 3P Imports
 import cv2
 import numpy as np
+import matplotlib.pyplot as plt
 
 # Local Imports
 
 
-def matlab_style_gauss2D(shape=(3, 3), sigma=0.5):
-
-    ''' 2D Gaussian mask - should give the same result as MATLAB's
+def matlab_style_gauss2D(shape=(3, 3), sigma=1, inverse=False):
+    """ 2D Gaussian mask - should give the same result as MATLAB's
     fspecial('gaussian', [shape], [sigma])
         Machine Epsilon - Smallest discrete difference between numbers
-    where they are numerically the same; determined by data type '''
+    where they are numerically the same; determined by data type """
 
     # Get 2D Gaussian Dimensional Lengths
     m, n = [(ss - 1) / 2 for ss in shape[:2]]
@@ -39,31 +39,38 @@ def matlab_style_gauss2D(shape=(3, 3), sigma=0.5):
     # epsilon multipled by the max value in the grid
     h[h < np.finfo(h.dtype).eps * h.max()] = 0
 
-    # Divide each element by the sum of all the elements (average?)
-    sumh = h.sum()
-    if (sumh != 0):
-        h /= sumh
+    # # Divide each element by the sum of all the elements (Normalize)
+    max_h = h.max()
+    if (max_h != 0):
+        h /= max_h
+
+    # Return an inverse gaussian instead
+    if (inverse):
+        h = 1 - h
 
     return h
 
 
-def gamma_kernel(image, maskSize=16, d=2):
-
-    ''' Generate a 2D Gamma Kernel
+def gamma_kernel(image, mask_size=(16, 16), k=None, mu=None, d=2):
+    """ Generate a 2D Gamma Kernel
+    d - dimensionality
     k - vector contained kernel orders
-    mu - vector containing shape parameters '''
+    mu - vector containing shape parameters """
 
     # Gamma Filter Order, Shape
-    k = np.array([1, 25, 1, 30, 1, 35], dtype=float)  # Orders
-    mu = np.array([4, 4, 4, 4, 4, 4], dtype=float)  # Shapes
+    if k is None:
+        k = np.array([1, 20, 1, 30, 1, 40], dtype=float)  # Orders
+    if mu is None:
+        mu = np.array([4, 4, 4, 4, 4, 4], dtype=float)  # Shapes
 
-    # Create Kernels and Kernel Mask
-    g = np.zeros((len(mu), 2 * maskSize + 1, 2 * maskSize + 1))
-    n = np.arange(-maskSize, maskSize + 1)
-    gk = np.zeros((2 * maskSize + 1, 2 * maskSize + 1))
+    # Declare Kernels and Kernel Mask structures
+    g = np.zeros((len(mu), 2 * mask_size[0] + 1, 2 * mask_size[1] + 1))
+    n1 = np.arange(-mask_size[1], mask_size[1] + 1)
+    n2 = np.arange(-mask_size[0], mask_size[0] + 1)
+    gk = np.zeros((2 * mask_size[0] + 1, 2 * mask_size[1] + 1))
 
     # Meshgrid creates 2D coordinates out of vectors
-    NX, NY = np.meshgrid(n, n)
+    NX, NY = np.meshgrid(n1, n2)
 
     # Create a local support grid (zero at center, max in corners)
     supgrid = (NX ** 2 + NY ** 2)
@@ -82,13 +89,15 @@ def gamma_kernel(image, maskSize=16, d=2):
 
     # Calculate kernels - Calculate Time ~0.0169537
     for i in range(len(mu)):
-        g[i] = (mu[i] ** (k[i] + 1)) / (2 * np.pi * math.factorial(k[i])) * \
+        g[i] = ((mu[i] ** (k[i] + 1)) / (2 * np.pi * math.factorial(k[i]))) * \
                (supgrid ** ((k[i] - 1) * 0.5)) * \
                (np.exp(-mu[i] * (supgrid ** 0.5)))
+        # plt.figure()
+        # plt.imshow(g[i])
 
     # Normalize Kernels
     for i in range(len(mu)):
-        g[i] = g[i] / sum(sum(g[i]))
+        g[i] = g[i] / g[i].sum()
 
     ''' "For multiscale saliency measure, we simply combine multiple kernels
     of different sizes before the convolution stage. Kernel with larger center
@@ -96,26 +105,34 @@ def gamma_kernel(image, maskSize=16, d=2):
     neighborhood, effectively searching for larger objects by comparing more
     overall area in the image. Kernel summation described in paper. '''
 
-    # Combine Kernels - Center needs to be subtracted out each time
+    # Combine Kernels - Subtract the surround from the center
     for i in range(len(mu)):
-        gk += g[i] * ((-1) ** i)
+        kernel = (g[i] * ((-1) ** i))
+        # plt.figure()
+        # plt.imshow(kernel)
+        # plt.title(f"Kernel {i}; Order = {k[i]}; Shape = {mu[i]}")
+        gk += kernel
+
+    # plt.figure()
+    # plt.imshow(gk)
+    # plt.show()
 
     return gk
 
 
-def convolution(image, kernel, prior):
-
-    ''' Focus of Attention Convolution
+def convolution(image, kernel, prior, alpha=None):
+    """ Focus of Attention Convolution
     image - Input Image Object - Contains CIELAB Color Space Image
     kernel - Matrix for filtering the image
     alpha - exponent on the saliency
     prior - foveation prior
 
     Create a 2D gamma kernel and convolve it with the input image to generate
-    a saliency map '''
+    a saliency map """
 
     blurSize = 3  # Gaussian Blur - Odd Size Required
-    alpha = 3  # Exponentiation Parameter
+    if alpha is None:
+        alpha = 4  # Exponentiation Parameter
     gk = kernel
 
     # Compute Saliency over each scale and apply a Gaussian Blur
