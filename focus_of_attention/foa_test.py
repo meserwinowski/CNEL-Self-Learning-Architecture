@@ -17,6 +17,7 @@ import time
 # 3P Imports
 import matplotlib.pyplot as plt
 import numpy as np
+import cv2
 
 # Local Imports
 import foa_image as foai
@@ -57,17 +58,30 @@ if __name__ == '__main__':
     print(f"Salience Map Generation: {stop - start} seconds")
 
     # Bound and Rank the most Salient Regions of Saliency Map
-    foas.salience_scan(test_image, rankCount=10)
+    foas.salience_scan(test_image, rank_count=3)
 
 # %% Display Results
 
-    test_image.plot_original_map()
-    # Plot Bounding Box Patches
-    test_image.draw_image_patches()
-    for i in range(len(test_image.patched_sequence)):
-        test_image.display_map(test_image.patched_sequence[i], f"{i}")
-    test_image.plot_patched_map()
+    # test_image.plot_original_map()
     # test_image.plot_saliency_map()
+    # # Plot Bounding Box Patches
+    test_image.draw_image_patches()
+    # for i in range(len(test_image.patched_sequence)):
+    #     test_image.display_map(test_image.patched_sequence[i], f"{i}")
+    # test_image.plot_patched_map()
+
+    # omap = test_image.original
+    # smap = test_image.salience_map
+    # smap = 255 * smap
+    # smap = smap.astype(np.uint8)
+    # smap = np.dstack([smap, smap, smap])
+    # pmap = test_image.patched
+    # cv2.imwrite("./o_map.png", cv2.cvtColor(omap, cv2.COLOR_BGR2RGB))
+    # cv2.imwrite("./s_map.png", smap)
+    # cv2.imwrite("./p_map.png", cv2.cvtColor(pmap, cv2.COLOR_BGR2RGB))
+    # print(omap.shape, smap.shape, pmap.shape)
+    # cmap = np.concatenate((omap, smap, pmap), axis=1)
+    # cv2.imwrite("./combined_map.png", cv2.cvtColor(cmap, cv2.COLOR_BGR2RGB))
 
 #    # Create a figure with 2 subplots
 #    fig, (ax1, ax2) = plt.subplots(1, 2)

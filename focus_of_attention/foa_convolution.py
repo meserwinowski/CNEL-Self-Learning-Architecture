@@ -51,7 +51,7 @@ def matlab_style_gauss2D(shape=(3, 3), sigma=1, inverse=False):
     return h
 
 
-def gamma_kernel(image, mask_size=(16, 16), k=None, mu=None, d=2):
+def gamma_kernel(image=None, mask_size=(16, 16), k=None, mu=None, d=2):
     """ Generate a 2D Gamma Kernel
     d - dimensionality
     k - vector contained kernel orders
@@ -64,7 +64,7 @@ def gamma_kernel(image, mask_size=(16, 16), k=None, mu=None, d=2):
         mu = np.array([4, 4, 4, 4, 4, 4], dtype=float)  # Shapes
 
     # Declare Kernels and Kernel Mask structures
-    g = np.zeros((len(mu), 2 * mask_size[0] + 1, 2 * mask_size[1] + 1))
+    g = np.zeros((len(k), 2 * mask_size[0] + 1, 2 * mask_size[1] + 1))
     n1 = np.arange(-mask_size[1], mask_size[1] + 1)
     n2 = np.arange(-mask_size[0], mask_size[0] + 1)
     gk = np.zeros((2 * mask_size[0] + 1, 2 * mask_size[1] + 1))
@@ -88,16 +88,15 @@ def gamma_kernel(image, mask_size=(16, 16), k=None, mu=None, d=2):
     addition, smaller values of µ will increase the bandwidth of the peak.'''
 
     # Calculate kernels - Calculate Time ~0.0169537
-    for i in range(len(mu)):
+    for i in range(len(k)):
         g[i] = ((mu[i] ** (k[i] + 1)) / (2 * np.pi * math.factorial(k[i]))) * \
                (supgrid ** ((k[i] - 1) * 0.5)) * \
                (np.exp(-mu[i] * (supgrid ** 0.5)))
-        # plt.figure()
-        # plt.imshow(g[i])
 
     # Normalize Kernels
-    for i in range(len(mu)):
-        g[i] = g[i] / g[i].sum()
+    # for i in range(len(k)):
+    #     g[i] = g[i] / g[i].sum()
+        # g[i] = g[i] / g[i].max()
 
     ''' "For multiscale saliency measure, we simply combine multiple kernels
     of different sizes before the convolution stage. Kernel with larger center
@@ -106,15 +105,21 @@ def gamma_kernel(image, mask_size=(16, 16), k=None, mu=None, d=2):
     overall area in the image. Kernel summation described in paper. '''
 
     # Combine Kernels - Subtract the surround from the center
-    for i in range(len(mu)):
+    for i in range(len(k)):
         kernel = (g[i] * ((-1) ** i))
-        # plt.figure()
-        # plt.imshow(kernel)
-        # plt.title(f"Kernel {i}; Order = {k[i]}; Shape = {mu[i]}")
         gk += kernel
+        # plt.figure()
+        # plt.imshow(gk)
+        # plt.title(f"Kernel {i}; Order = {k[i]}; Shape = {mu[i]}")
 
     # plt.figure()
+    # gk_test = g[0] + g[1] + g[3] + g[5]
     # plt.imshow(gk)
+    # gk_test = 255 * gk_test
+    # gk_test = gk_test.astype(np.uint8)
+    # gk_test = np.dstack([gk_test, gk_test, gk_test])
+    # cv2.imwrite("./gamma_kernel_visual_example.png", gk_test)
+    # plt.title("Gamma Kernel")
     # plt.show()
 
     return gk
@@ -156,11 +161,11 @@ def convolution(image, kernel, prior, alpha=None):
     # Monochromatic Images
     else:
         # Convolution Time
-        saliency[:, :] = abs(cv2.filter2D(image.modified[:, :], -1, gk))
+        saliency = cv2.filter2D(np.float32(image.modified), -1, gk)
+        saliency = abs(saliency)
 
         # Gaussian Blur Time - ~0.002 seconds per iteration
-        saliency[:, :] = cv2.GaussianBlur(image.modified[:, :],
-                                          (blurSize, blurSize), 10)
+        saliency = cv2.GaussianBlur(saliency, (blurSize, blurSize), 10)
         sal_map = saliency
 
     # Foveate the salience map by multipling a gaussian blur across the entire

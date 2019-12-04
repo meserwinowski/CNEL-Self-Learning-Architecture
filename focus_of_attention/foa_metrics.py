@@ -12,7 +12,7 @@ https://github.com/cvzoya/saliency/tree/master/code_forMetrics
 Current metrics:
     Precision-Recall (PR) and Average Precision (AP)
     F-Measure (F1)
-    ROC Curve + sAUC (Shuffed) (TODO)
+    ROC Curve + sAUC (Shuffled) (TODO)
     ROC Curve + AUC (Borji)
     ROC Curve + AUC (Judd)
     ROC Curve + AUC (sklearn)
@@ -68,19 +68,6 @@ def squarePadImage(image):
     return image
 
 
-def eigDecompImage(image):
-    ''' Perform eigen decomposition on an image map. Requires that the
-    image be padded to a square. '''
-    assert len(image.shape) == 2, "Image map should be two dimensions!"
-
-    # Pad image if necessary
-    if (image.shape[0] != image.shape[1]):
-        image = squarePadImage(image)
-
-    # Eigendecomposition - returns 2 items: eigenvals and eigenvects
-    return np.linalg.eig(image)
-
-
 def normalize(map=np.array):
     """ Min-max Normalization """
     assert (map is not None)
@@ -89,7 +76,6 @@ def normalize(map=np.array):
     max_v = map.max()
     if (max_v != 1):
         map = (map - map.min()) / (map.max() - map.min())
-        # map *= 1 / map.sum()
 
     return map
 
@@ -214,7 +200,7 @@ def auc_judd(smap, gt, jitter=False, plot=False):
 
 
 def auc_borji(image, num_splits=10, step_size=0.01):
-    
+
     assert (image.salience_map is not None and image.ground_truth is not None)
     assert (image.salience_map.max() == 1.0)
     smap = image.salience_map
@@ -240,7 +226,6 @@ def auc_borji(image, num_splits=10, step_size=0.01):
     auc = np.zeros((num_splits, 1))
     for s in tqdm(range(num_splits)):
         cur_fix = rand_fix[:, s]
-        # all_threshes = np.flip([0:stepSize:double(max([thresholded_smap, cur_fix]))])
         thresh_end = np.float64(np.concatenate((thresholded_smap, cur_fix)).max())
         all_thresholds = np.flip(np.arange(0.0, thresh_end, step_size))
         tpr = np.zeros((len(all_thresholds), 1))
@@ -255,24 +240,28 @@ def auc_borji(image, num_splits=10, step_size=0.01):
         tpr_total = np.append(tpr_total, tpr)
         auc[s] = np.trapz(tpr, x=fpr, axis=0)[0]
     score = auc.mean()  # mean across random splits
-    print(fpr_total.shape)
+
     return fpr_total, tpr_total, all_thresholds, score
 
 
 def foa_roc_curve_and_auc(image, tf=0.5, mode="sklean", plot=False):
     assert (image.salience_map is not None and image.ground_truth is not None)
     assert (image.salience_map.max() == 1.0)
+    smap = image.salience_map
+    gt = normalize(image.ground_truth)
 
     # Generate binary ground truth
-    binary_gt = binarization(image.ground_truth, tf)
+    binary_gt = binarization(gt, tf)
 
     # Calculate ROC Curve and AUC
     if (mode == "sklearn"):
-        fpr, tpr, thresholds, foa_roc_auc = auc_sklearn(image.salience_map, binary_gt)
+        fpr, tpr, thresholds, foa_roc_auc = auc_sklearn(smap, binary_gt)
     elif (mode == "judd"):
-        fpr, tpr, thresholds, foa_roc_auc = auc_judd(image.salience_map, binary_gt)
+        fpr, tpr, thresholds, foa_roc_auc = auc_judd(smap, binary_gt)
     elif (mode == "borji"):
         fpr, tpr, thresholds, foa_roc_auc = auc_borji(image)
+    elif (mode == "shuffled"):
+        raise NotImplementedError("AUC Shuffled not implemented")
     else:
         raise ValueError(f"Invalid Mode: {mode}")
 
@@ -326,32 +315,19 @@ def foa_normalized_scanpath_saliency(image, tf=0.5):
 
     # Normalized saliency map
     if (smap.std(ddof=1) != 0):
-        smap = (smap - smap.mean()) / smap.std(ddof=1)
+        smap_normalize = (smap - smap.mean()) / smap.std(ddof=1)
 
     # Mean value at fixation locations
-    score = smap[binary_gt > 0].mean()
+    score = smap_normalize[binary_gt > 0].mean()
 
     return score
-    
-    # xs = np.asarray(xs, dtype=np.int)
-    # ys = np.asarray(ys, dtype=np.int)
-
-    # mean = smap.mean()
-    # std = smap.std()
-
-    # value = smap[ys, xs].copy()
-    # value -= mean
-
-    # if std:
-    #     value /= std
-
-    # return value
 
 
 def foa_mean_absolute_error(image):
     """ Mean Absolute Error
     Finds the L1 Norm of the saliency map and the fixation map; Direct pixel
     based comparison """
+
     assert (image.salience_map is not None and image.ground_truth is not None)
     assert (image.salience_map.max() == 1.0)
     smap = image.salience_map.astype(float)
@@ -381,8 +357,6 @@ def foa_kl_divergence(image, epsilon=1e-7):
 
     Very sensitive to order of magnitude changes in epsilon. """
 
-    # TODO: Review this implementation for correctness.
-
     assert (image.salience_map is not None and image.ground_truth is not None)
     assert (image.salience_map.max() == 1.0)
     smap = image.salience_map.astype(float)
@@ -390,14 +364,14 @@ def foa_kl_divergence(image, epsilon=1e-7):
 
     # make sure map1 and map2 sum to 1
     if (smap.any()):
-        smap = smap / (smap.sum() + epsilon)
+        smap = smap / smap.sum()
     if (gt.any()):
-        gt = gt / (gt.sum() + epsilon)
+        gt = gt / gt.sum()
 
     # Computer KL-divergence
-    score = gt * np.log(epsilon + (gt / (smap + epsilon)))
+    score = (gt * np.log(epsilon + (gt / (smap + epsilon)))).sum()
 
-    return score.sum()
+    return score
 
 
 def foa_sim(image):
@@ -405,8 +379,6 @@ def foa_sim(image):
     This similarity measure is also called histogram intersection and measures
     the similarity between two different saliency maps when viewed as
     distributions (SIM=1 means the distributions are identical). """
-    
-    # TODO: Alternative to min-max normalization: 
 
     assert (image.salience_map is not None and image.ground_truth is not None)
     assert (image.salience_map.max() == 1.0)
@@ -421,7 +393,6 @@ def foa_sim(image):
 
     # Compute Histogram Intersection
     diff = np.fmin(smap, gt)
-    print(diff.shape)
     score = diff.sum()
 
     return score
@@ -435,8 +406,26 @@ def foa_earth_mover_distance(image):
     pass
 
 
-def foa_information_gain(image):
-    pass
+def foa_information_gain(image, baseline):
+    assert (image.salience_map is not None and image.ground_truth is not None)
+    assert (image.salience_map.max() == 1.0)
+    smap = image.salience_map.astype(float)
+    gt = image.ground_truth.astype(float)
+
+    # gt = discretize_gt(gt)
+    gt /= 255
+    # assuming s_map and baseline_map are normalized
+    eps = 2.2204e-16
+    smap = smap / np.sum(smap)
+    baseline = baseline / np.sum(baseline)
+
+    # for all places where gt=1, calculate info gain
+    temp = []
+    x, y = np.where(gt > 0)
+    for i in zip(x, y):
+        temp.append(np.log2(eps + smap[i[0], i[1]]) - np.log2(eps + baseline[i[0], i[1]]))
+
+    return np.mean(temp)
 
 
 # Main Routine
@@ -469,10 +458,10 @@ if __name__ == '__main__':
     # Generate Gamma Kernel
     # k = np.array([1, 26, 1, 25, 1, 19], dtype=float)
     # mu = np.array([2, 2, 1, 1, 0.5, 0.5], dtype=float)
-    hmm = test_image.modified.shape
-    k = np.array([2, 20, 2, 50, 2, 80], dtype=float)
+
+    k = np.array([1, 20, 1, 30, 1, 40], dtype=float)
     mu = np.array([2, 2, 2, 2, 2, 2], dtype=float)
-    kernel = foac.gamma_kernel(test_image, mask_size=(40, 80), k=k, mu=mu)
+    kernel = foac.gamma_kernel(test_image, mask_size=(40, 40), k=k, mu=mu)
 
     # Generate Saliency Map
     start = time.time()
@@ -484,10 +473,10 @@ if __name__ == '__main__':
     foas.salience_scan(test_image, rank_count=5, bbox_size=(80, 80))
 
 # %% Plot Results
-    # test_image.plot_original_map()
-    # test_image.plot_modified_map
-    # test_image.plot_saliency_map()
-    # test_image.plot_ground_truth()
+    test_image.plot_original_map()
+    test_image.plot_modified_map
+    test_image.plot_saliency_map()
+    test_image.plot_ground_truth()
     # test_image.draw_image_patches(bbt=2)
     # for i in range(len(test_image.patched_sequence)):
     #     test_image.display_map(test_image.patched_sequence[i], f"{i}")
@@ -501,45 +490,41 @@ if __name__ == '__main__':
     # # Average Precision (AP) Score
     # print(f"Average Precision: {ap_score:.4f}")
 
-    # F-Measure (F1) Score
+    # # F-Measure (F1) Score
     # print(f"F-Measure: {f_score:.4f}")
 
     # # ROC + AUC (sklearn) Test
-    # foa_auc = foa_roc_curve_and_auc(test_image, mode="sklearn", plot=True)
-    # print(f"ROC AUC: {foa_auc:.4f}")
+    # foa_auc = foa_roc_curve_and_auc(test_image, mode="sklearn", plot=False)
+    # print(f"ROC sklearn AUC: {foa_auc:.4f}")
 
-    # ROC + AUC (Judd) Test
-    # foa_auc = foa_roc_curve_and_auc(test_image, mode="judd", plot=True)
-    # print(f"ROC AUC: {foa_auc:.4f}")
+    # # ROC + AUC (Judd) Test
+    # foa_auc = foa_roc_curve_and_auc(test_image, mode="judd", plot=False)
+    # print(f"ROC Judd AUC: {foa_auc:.4f}")
 
-    # # # ROC + AUC (Borji) Test
-    # foa_auc = foa_roc_curve_and_auc(test_image, mode="borji", plot=True)
-    # print(f"ROC AUC: {foa_auc:.4f}")
+    # # ROC + AUC (Borji) Test
+    # foa_auc = foa_roc_curve_and_auc(test_image, mode="borji", plot=False)
+    # print(f"ROC Borji AUC: {foa_auc:.4f}")
 
-    # # Correlation Coefficient (CC) Test
-    # cc = foa_correlation_coefficient(test_image)
-    # print(f"Correlation Coefficient: {cc:.4f}")
+    # Correlation Coefficient (CC) Test
+    cc = foa_correlation_coefficient(test_image)
+    print(f"Correlation Coefficient: {cc:.4f}")
 
-    # # Normalized Scanpath Saliency (NSS) Test
-    # nss_score = foa_normalized_scanpath_saliency(test_image)
-    # print(f"NSS Score: {nss_score:.4f}")
+    # Normalized Scanpath Saliency (NSS) Test
+    nss_score = foa_normalized_scanpath_saliency(test_image)
+    print(f"NSS Score: {nss_score:.4f}")
 
-    # # Mean Absolute Error (MAE) Test
-    # mae = foa_mean_absolute_error(test_image)
-    # print(f"MAE: {mae:.4f}")
+    # Mean Absolute Error (MAE) Test
+    mae = foa_mean_absolute_error(test_image)
+    print(f"MAE: {mae:.4f}")
 
-    # # Kullback-Liebler Divergence (KB) Test
-    # kb_div = foa_kl_divergence(test_image)
-    # print(f"KL Divergence: {kb_div:.4f}")
+    # Kullback-Liebler Divergence (KB) Test
+    kb_div = foa_kl_divergence(test_image)
+    print(f"KL Divergence: {kb_div:.4f}")
 
     # Similarity (SIM) Test
     sim_score = foa_sim(test_image)
     print(f"Similarity: {sim_score:.4f}")
-    
-    plt.figure()
-    plt.imshow(test_image.ground_truth)
-    
-    # gt = binarization(test_image.ground_truth)
-    # plt.figure()
-    # plt.imshow(gt)
-    plt.show()
+
+    # Information Gain (IG) Gaussian Test (Center Bias)
+    ig_score = foa_information_gain(test_image, foveation_prior)
+    print(f"Information Gain: {ig_score:.4f}")

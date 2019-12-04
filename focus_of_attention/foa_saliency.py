@@ -51,7 +51,7 @@ def build_bounding_box(center, smap, bbox_size=(32, 32)):
     if (C2 > smap.shape[2]):
         C2 = smap.shape[2]
 
-    return {"top_left": [R1, C1], "bottom_right": [R2, C2]}
+    return {"top_left": [R1, C1], "bottom_right": [R2, C2], "center": [R, C]}
 
 
 def salience_scan(image=ImageObject, rank_count=4, bbox_size=(32, 32)):
@@ -70,12 +70,12 @@ def salience_scan(image=ImageObject, rank_count=4, bbox_size=(32, 32)):
     image.patched_sequence = np.empty((0, smap.shape[0], smap.shape[1]))
 
     # Create an inverse Gaussian kernel for removing salient regions
-    inverse_gauss = matlab_style_gauss2D(bbox_size, sigma=15, inverse=True)
+    inverse_gauss = matlab_style_gauss2D(bbox_size, sigma=28, inverse=True)
 
     # Pick out the top 'rankCount' maximally intense regions
     for i in range(rank_count):
 
-        # Copy and Reshape saliency map
+        # # Copy and Reshape saliency map
         temp_smap = np.copy(smap)
         temp_smap = np.reshape(temp_smap, (1, smap.shape[0], smap.shape[1]))
 
@@ -95,7 +95,7 @@ def salience_scan(image=ImageObject, rank_count=4, bbox_size=(32, 32)):
 
         # Get bounding box coordinates for object
         coords = build_bounding_box([R, C], temp_smap, bbox_size)
-        # print("Coords: ", coords)
+        # print(f"Coords {i}: {coords}")
 
         # Add coordinates to member list on the image object
         image.bb_coords.append(coords)
